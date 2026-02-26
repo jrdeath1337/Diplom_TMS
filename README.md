@@ -1,5 +1,6 @@
 # Diplom_TMS
 Дипломная работа для курса DevOps Engineer
+``````
 CompfyUI_cloud
 ├── ansible #Настройка ОС и софта
 │   ├── inventort.ini #IP инстанса (генерируется terraform)
@@ -24,4 +25,4 @@ CompfyUI_cloud
     ├── outputs.tf #IP сервера после создания 
     ├── provider.tf #Настройка провайдера (Пока хз что за облако будет)
     └── variables.tf #Переменные (тип GPU, регион)
-
+``````
