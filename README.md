@@ -199,7 +199,7 @@ kubectl apply -k k8s/overlays/production
 5. Настройка Ingress и HTTPS
 Установи nginx-ingress и cert-manager (через Helm).
 
-Создай Issuer для Let's Encrypt.
+Создай Issuer для Let\'s Encrypt.
 
 Примени Ingress-ресурс с указанием домена и secret для basic auth.
 
@@ -239,7 +239,7 @@ Utilisation, температура, память, мощность
 🔐 Безопасность
 Доступ к сервису защищён базовой HTTP-аутентификацией (htpasswd).
 
-HTTPS обеспечивается сертификатами Let's Encrypt.
+HTTPS обеспечивается сертификатами Let\'s Encrypt.
 
 Секреты (токены, пароли) хранятся в GitHub Secrets и Kubernetes Secrets.
 
