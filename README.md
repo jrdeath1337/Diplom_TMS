@@ -47,7 +47,8 @@ CompfyUI_cloud
 ---
 
 ## 🏗️ Архитектура проекта
-``````[GitHub] -> push -> GitHub Actions (CI/CD)
+``````
+[GitHub] -> push -> GitHub Actions (CI/CD)
 |
 v
 Сборка Docker-образа
