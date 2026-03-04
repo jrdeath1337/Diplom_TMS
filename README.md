@@ -47,7 +47,7 @@ CompfyUI_cloud
 ---
 
 ## 🏗️ Архитектура проекта
-[GitHub] -> push -> GitHub Actions (CI/CD)
+``````[GitHub] -> push -> GitHub Actions (CI/CD)
 |
 v
 Сборка Docker-образа
@@ -66,8 +66,7 @@ Ingress/HTTPS Под с ComfyUI
 | |
 v v
 Пользователь Модели из Object Storage
-
-text
+``````
 
 **Компоненты:**
 - **ComfyUI** — веб-интерфейс для генерации изображений (модели SDXL и др.)
