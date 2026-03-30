@@ -1,13 +1,13 @@
-# 🚀 Hybrid Cloud GPU Rendering System
+#  Hybrid Cloud GPU Rendering System (K8s Edition)
 
-**Тема дипломного проекта:** Проектирование и автоматизация гибридной облачной инфраструктуры для распределенной генерации контента с использованием локальных GPU-мощностей (AMD ROCm).
+**Тема дипломного проекта:** Проектирование и автоматизация гибридной облачной инфраструктуры для масштабируемой генерации контента с использованием Managed Kubernetes и локальных мощностей AMD GPU (ROCm).
 
 ---
 
 ## 📝 Описание концепции
-Проект решает проблему высокой стоимости облачных GPU-инстансов. Система объединяет управляющий слой в публичном облаке (**Yandex Cloud**) и вычислительный слой на локальном оборудовании (**On-premise AMD GPU**). 
+Проект реализует гибридную модель: оркестрация, API и хранение данных находятся в **Yandex Cloud (Managed K8s)**, а тяжелые вычисления вынесены на **On-premise** узел с **AMD Radeon RX 9070 XT**. Это позволяет обходить ограничения облачных триалов на GPU и кратно снижать стоимость владения системой.
 
-**Ключевая особенность:** Использование новейшей архитектуры **AMD (RX 9070 XT)** внутри изолированных Docker-контейнеров, связанных с облаком через защищенный L3-туннель.
+**Ключевая особенность:** Использование K8s для управления жизненным циклом запросов и автоматизация доставки кода (CI/CD) на гетерогенное железо (Cloud CPU + Local GPU).
 
 ---
 
@@ -15,29 +15,27 @@
 
 
 | Уровень | Технология | Роль в проекте |
-| :---| :--- | :--- |
-| **Infrastructure** | **Terraform** | Развертывание VPC, S3, DB и VM через IaC |
-| **Cloud** | **Yandex Cloud** | Хостинг базы данных, хранилища и точки входа |
-| **Computing** | **AMD RX 9070 XT** | Основной вычислительный юнит (архитектура gfx12) |
-| **Runtime** | **Docker + ROCm** | Контейнеризация нейросети с пробросом GPU |
-| **Database** | **PostgreSQL** | Регистрация запросов, метаданных и путей к файлам |
-| **Storage** | **Yandex Object Storage** | S3-хранилище для готовых артефактов (изображений) |
-| **Networking** | **WireGuard + Nginx** | Безопасный туннель и Reverse Proxy для ComfyUI |
-| **OS (Local)** | **Nobara Linux** | Оптимизированный хост для работы с AMD GPU |
-| **CI/CD** | **GitHub Actions** | Автоматизация сборки воркера и проверки конфигов |
+| :--- | :--- | :--- |
+| 🏗 **Infrastructure** | **Terraform** | IaC для создания VPC, K8s кластера, S3 и PostgreSQL |
+| ☁️ **Orchestration** | **Yandex Managed K8s** | Оркестрация API-сервисов, Ingress-контроллеров и очередей |
+| ⚡ **Computing** | **AMD RX 9070 XT** | Вычислительный узел (архитектура gfx1201) на базе Nobara Linux |
+| 📦 **Packaging** | **Helm** | Управление релизами приложений внутри Kubernetes |
+| 🐳 **Runtime** | **Docker + ROCm** | Изоляция окружения нейросети и проброс GPU |
+| 💾 **Database** | **PostgreSQL** | Хранение метаданных пользователей и истории генераций |
+| 🪣 **Storage** | **Yandex Object Storage** | S3-бакет для постоянного хранения готовых изображений |
+| 🔗 **Networking** | **WireGuard + K8s Services** | Защищенный туннель и интеграция внешнего воркера в кластер |
+| 🔄 **CI/CD** | **GitHub Actions** | Автоматизация сборки образов и деплоя манифестов |
 
 ---
 
 ## 🏗 Архитектура и поток данных (Workflow)
 
-1. **User Interface:** Пользователь обращается к внешнему IP в Yandex Cloud.
-2. **Routing:** Nginx перенаправляет трафик через VPN-интерфейс **WireGuard**.
-3. **Processing:** Запрос попадает в Docker-контейнер на локальной машине (**Nobara**).
-4. **GPU Compute:** **ComfyUI** генерирует изображение, используя ресурсы **RX 9070 XT** через стек **ROCm**.
-5. **Data Persistence:** 
-   - Метаданные (промпт, время, ID пользователя) пишутся в **PostgreSQL** в облаке.
-   - Готовый файл загружается в **Yandex Object Storage (S3)**.
-6. **Result:** Пользователь получает ссылку на скачивание изображения из S3.
+1. **Entry Point:** Запрос пользователя поступает на **Nginx Ingress** в кластере Kubernetes.
+2. **API Layer:** Микросервис в K8s регистрирует задачу в **PostgreSQL** и передает запрос в очередь.
+3. **Hybrid Link:** Через **WireGuard** туннель запрос уходит на локальный воркер.
+4. **GPU Processing:** Контейнер на базе **ROCm** выполняет инференс на **RX 9070 XT** через ComfyUI API.
+5. **Artifact Storage:** Готовый результат загружается напрямую в **Yandex S3**.
+6. **Finalize:** Воркер обновляет статус в БД. API отдает пользователю ссылку на результат.
 
 ---
 
@@ -45,21 +43,20 @@
 
 ```bash
 .
-├── terraform/                # Инфраструктура (IaC)
-│   ├── main.tf               # Провайдер и общие настройки
-│   ├── network.tf            # VPC, Security Groups, VPN Gateway
-│   ├── db.tf                 # Конфигурация Managed PostgreSQL
-│   └── storage.tf            # Настройки S3 бакета
+├── terraform/                # Infrastructure as Code
+│   ├── main.tf               # Провайдеры (Yandex)
+│   ├── k8s.tf                # Managed Kubernetes Cluster & Node groups
+│   ├── db.tf                 # Managed PostgreSQL configuration
+│   └── storage.tf            # S3 Bucket & IAM policy
+├── helm/                     # Kubernetes manifests
+│   ├── api-service/          # Чарты для облачного API
+│   └── ingress/              # Настройки Nginx Ingress и TLS
 ├── docker/                   # Контейнеризация
-│   ├── comfyui/
-│   │   ├── Dockerfile        # База: rocm/pytorch (gfx1201 support)
-│   │   └── config.ini        # Настройки инференса
-│   └── vpn/
-│       └── wg0.conf          # Конфиг WireGuard клиента
-├── app/                      # Логика интеграции (Python)
-│   ├── logger.py             # Модуль записи событий в БД
-│   └── uploader.py           # Модуль синхронизации с S3
-├── proxy/                    # Облачный шлюз
-│   └── nginx.conf            # Настройки Reverse Proxy
-└── .github/
-    └── workflows/            # CI/CD пайплайны
+│   ├── worker-rocm/          # Образ ComfyUI + ROCm (для Nobara)
+│   └── api-server/           # Образ легковесного API (для K8s)
+├── app/                      # Исходный код (Python)
+│   ├── db_client.py          # Логика работы с PostgreSQL
+│   └── worker_core.py        # Обработка очередей и запуск ComfyUI
+├── scripts/                  # Автоматизация
+│   └── setup_wireguard.sh    # Конфигурация туннеля
+└── .github/workflows/        # CI/CD пайплайны
