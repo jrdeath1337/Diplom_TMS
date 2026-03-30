@@ -1,282 +1,65 @@
-# Diplom_TMS
-# 🖼️ DevOps-проект: Self-hosted AI генератор изображений (ComfyUI) в Kubernetes + Yandex Cloud
-# Дипломная работа для курса DevOps Engineer
+# 🚀 Hybrid Cloud GPU Rendering System
 
-## 📝 Схема проекта 
-``````
-CompfyUI_cloud
-├── ansible #Настройка ОС и софта
-│   ├── inventort.ini #IP инстанса (генерируется terraform)
-│   ├── roles #Роли ansible
-│   │   ├── common #База (Docker, пакеты)
-│   │   ├── k3s #Установка кластера+GPU плагин
-│   │   ├── nvidia #Драйвер GPU + nvidia-container-toolkit
-│   │   └── storage #Монтирование S3 или создание папок под ИИ модели
-│   └── site.yml #Главный playbook
-├── docker #Сборка image
-│   └── Dockerfile #CompfyUI на базе NVIDIA CUDA
-├── k8s #k8s manifest
-│   ├── deployment.yaml #Манифест CompfyUI
-│   ├── pvc.yaml #persistentVolumeClaim - тут будут храниться ИИ модели для Compfy
-│   └── service.yaml #Доступ к UI (NodePort или LoadBalancer)
-├── README.md #Ветрина
-├── .github #CI/CD pipeline
-│   └── workflows
-│       └── main.yml Linting -> Build -> Push -> Deploy
-└── terraform #IaC: Поднятие инфраструктуры (железа в облаке)
-    ├── main.tf #Основные ресурсы (VM, Network, Disk)
-    ├── outputs.tf #IP сервера после создания 
-    ├── provider.tf #Настройка провайдера (Пока хз что за облако будет)
-    └── variables.tf #Переменные (тип GPU, регион)
-``````
-
-## 📌 Описание проекта
-Проект представляет собой полностью автоматизированное развёртывание сервиса генерации изображений на базе **ComfyUI** в Kubernetes-кластере.  
-Реализован **полный цикл DevOps**:
-- Локальная разработка и тестирование на CPU
-- Финальный запуск в облаке **Yandex Cloud** с GPU (NVIDIA)
-- Инфраструктура как код (**Terraform**)
-- Управление конфигурацией (**Ansible**)
-- Контейнеризация (**Docker**)
-- Оркестрация (**Kubernetes**, Managed Kubernetes от Yandex)
-- Непрерывная интеграция и доставка (**GitHub Actions** + self-hosted runner)
-- Мониторинг состояния GPU и кластера (**Prometheus**, **Grafana**, **DCGM Exporter**)
-- Доступ через интернет с HTTPS и базовой аутентификацией
-
-Цель проекта — продемонстрировать навыки DevOps-инженера, работу с GPU-нагрузками, облачными провайдерами и современным инструментарием.
+**Тема дипломного проекта:** Проектирование и автоматизация гибридной облачной инфраструктуры для распределенной генерации контента с использованием локальных GPU-мощностей (AMD ROCm).
 
 ---
 
-## 🏗️ Архитектура проекта
-``````
-[GitHub] -> push -> GitHub Actions (CI/CD)
-|
-v
-Сборка Docker-образа
-|
-v
-Публикация в Container Registry (Yandex Cloud)
-|
-v
-Деплой в Managed Kubernetes (Yandex Cloud)
-|
-v
-+--------------+--------------+
-| |
-Ingress/HTTPS Под с ComfyUI
-(auth + TLS) (GPU: NVIDIA)
-| |
-v v
-Пользователь Модели из Object Storage
-``````
+## 📝 Описание концепции
+Проект решает проблему высокой стоимости облачных GPU-инстансов. Система объединяет управляющий слой в публичном облаке (**Yandex Cloud**) и вычислительный слой на локальном оборудовании (**On-premise AMD GPU**). 
 
-**Компоненты:**
-- **ComfyUI** — веб-интерфейс для генерации изображений (модели SDXL и др.)
-- **Kubernetes** — Managed Kubernetes от Yandex Cloud, одна GPU-нода (V100/A100)
-- **Ingress** — nginx-ingress с cert-manager для HTTPS и basic auth
-- **Хранилище моделей** — Object Storage (S3-совместимое) с CSI-драйвером для монтирования в под
-- **Мониторинг** — Prometheus Operator + DCGM Exporter + Grafana
+**Ключевая особенность:** Использование новейшей архитектуры **AMD (RX 9070 XT)** внутри изолированных Docker-контейнеров, связанных с облаком через защищенный L3-туннель.
 
 ---
 
-## 🛠️ Технологический стек
+## 🛠 Технологический стек (Full Stack)
 
-| Категория | Инструменты |
-|-----------|-------------|
-| **Языки/форматы** | YAML, HCL, Bash, Python (минимум) |
-| **Контейнеризация** | Docker |
-| **Оркестрация** | Kubernetes (Managed Yandex), k3s (локально) |
-| **CI/CD** | GitHub Actions + self-hosted runner |
-| **IaC** | Terraform (Yandex Cloud) |
-| **Управление конфигурацией** | Ansible |
-| **Мониторинг** | Prometheus, Grafana, DCGM Exporter |
-| **Сеть и безопасность** | Nginx Ingress, cert-manager, basic auth, Cloudflare Tunnel (опционально) |
-| **Облако** | Yandex Cloud (Compute, Managed Kubernetes, Object Storage, Container Registry) |
-| **GPU** | NVIDIA (CUDA), драйверы от Yandex |
 
----
-
-## 📋 Предварительные требования
-
-Для локальной разработки:
-- Linux (рекомендуется) или WSL2
-- Docker
-- kubectl
-- k3s (для локального тестирования k8s)
-- Ansible
-- Terraform
-- Аккаунт GitHub
-- (Опционально) Аккаунт Yandex Cloud для финала
-
-Для облачного этапа:
-- Аккаунт Yandex Cloud с активированным доступом к GPU (квоты)
-- Зарегистрированный домен (или подготовка к использованию Cloudflare Tunnel)
+| Уровень | Технология | Роль в проекте |
+| :---| :--- | :--- |
+| **Infrastructure** | **Terraform** | Развертывание VPC, S3, DB и VM через IaC |
+| **Cloud** | **Yandex Cloud** | Хостинг базы данных, хранилища и точки входа |
+| **Computing** | **AMD RX 9070 XT** | Основной вычислительный юнит (архитектура gfx12) |
+| **Runtime** | **Docker + ROCm** | Контейнеризация нейросети с пробросом GPU |
+| **Database** | **PostgreSQL** | Регистрация запросов, метаданных и путей к файлам |
+| **Storage** | **Yandex Object Storage** | S3-хранилище для готовых артефактов (изображений) |
+| **Networking** | **WireGuard + Nginx** | Безопасный туннель и Reverse Proxy для ComfyUI |
+| **OS (Local)** | **Nobara Linux** | Оптимизированный хост для работы с AMD GPU |
+| **CI/CD** | **GitHub Actions** | Автоматизация сборки воркера и проверки конфигов |
 
 ---
 
-## 🚀 Локальное развёртывание (CPU-режим)
+## 🏗 Архитектура и поток данных (Workflow)
 
-Этот этап позволяет разрабатывать и тестировать логику без затрат на облако.
+1. **User Interface:** Пользователь обращается к внешнему IP в Yandex Cloud.
+2. **Routing:** Nginx перенаправляет трафик через VPN-интерфейс **WireGuard**.
+3. **Processing:** Запрос попадает в Docker-контейнер на локальной машине (**Nobara**).
+4. **GPU Compute:** **ComfyUI** генерирует изображение, используя ресурсы **RX 9070 XT** через стек **ROCm**.
+5. **Data Persistence:** 
+   - Метаданные (промпт, время, ID пользователя) пишутся в **PostgreSQL** в облаке.
+   - Готовый файл загружается в **Yandex Object Storage (S3)**.
+6. **Result:** Пользователь получает ссылку на скачивание изображения из S3.
 
-### 1. Клонирование репозитория
+---
+
+## 📂 Структура репозитория
+
 ```bash
-git clone https://github.com/<your-username>/comfyui-devops.git
-cd comfyui-devops
-2. Сборка Docker-образа (CPU-версия)
-bash
-docker build -f docker/Dockerfile.cpu -t comfyui-cpu:latest .
-3. Запуск контейнера для проверки
-bash
-docker run -p 8188:8188 comfyui-cpu:latest
-Открой браузер: http://localhost:8188. Должен загрузиться интерфейс ComfyUI.
-
-4. Настройка локального k3s и деплой
-Установи k3s:
-
-bash
-curl -sfL https://get.k3s.io | sh -
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $USER ~/.kube/config
-Примени манифесты (CPU-вариант без GPU):
-
-bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/deployment-cpu.yaml
-kubectl apply -f k8s/service.yaml
-Проверь, что под запустился:
-
-bash
-kubectl get pods -n comfyui
-Пробрось порт для доступа:
-
-bash
-kubectl port-forward -n comfyui pod/comfyui-xxx 8188:8188
-5. Настройка CI/CD (self-hosted runner)
-Добавь self-hosted runner в GitHub (Settings → Actions → Runners).
-
-Установи и запусти runner на своей машине.
-
-Пример пайплайна .github/workflows/deploy-local.yaml уже в репозитории (адаптируй под registry).
-
-После пуша в ветку main образ будет собираться и деплоиться в локальный k3s.
-
-☁️ Развёртывание в Yandex Cloud (с GPU)
-1. Подготовка облачной инфраструктуры через Terraform
-Перейди в папку terraform/ и выполни:
-
-bash
-terraform init
-terraform plan
-terraform apply
-Будут созданы:
-
-Сеть и подсеть
-
-Service account с правами
-
-Managed Kubernetes кластер
-
-Нод-группа с GPU (прерываемая ВМ)
-
-Container Registry
-
-Object Storage бакет для моделей
-
-2. Получение доступа к кластеру
-bash
-yc managed-kubernetes cluster get-credentials gpu-cluster --external
-kubectl get nodes  # должна отобразиться GPU-нода
-3. Установка CSI-драйвера для S3 (монтирование моделей)
-bash
-helm repo add csi-s3 https://github.com/ctrox/csi-s3
-helm install csi-s3 csi-s3/csi-s3 --set accessKey=<...>,secretKey=<...>,endpoint=https://storage.yandexcloud.net
-(Создай секрет и StorageClass по инструкции в /docs/s3-csi.md)
-
-4. Деплой приложения
-Используй манифесты из k8s/overlays/production (с запросом GPU, Ingress, PVC).
-
-bash
-kubectl apply -k k8s/overlays/production
-5. Настройка Ingress и HTTPS
-Установи nginx-ingress и cert-manager (через Helm).
-
-Создай Issuer для Let\'s Encrypt.
-
-Примени Ingress-ресурс с указанием домена и secret для basic auth.
-
-6. Мониторинг
-bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install prometheus prometheus-community/kube-prometheus-stack
-Установи DCGM Exporter для сбора метрик GPU:
-
-bash
-helm repo add nvidia https://nvidia.github.io/dcgm-exporter/helm
-helm install dcgm-exporter nvidia/dcgm-exporter
-Импортируй дашборд GPU в Grafana (ID: 12239).
-
-🔄 CI/CD (GitHub Actions)
-Пайплайн автоматически:
-
-Собирает Docker-образ (на основе Dockerfile.production с поддержкой CUDA).
-
-Пушит образ в Yandex Container Registry.
-
-Обновляет deployment в Kubernetes (через kubectl set image или helm upgrade).
-
-Конфигурация лежит в .github/workflows/deploy-production.yaml.
-Для переключения между окружениями используется переменная KUBE_CONFIG (секрет GitHub).
-
-📊 Мониторинг
-Доступ к Grafana осуществляется через Ingress (с аутентификацией).
-Метрики GPU:
-
-Utilisation, температура, память, мощность
-
-Частота ядер и памяти
-
-Алерты могут быть настроены в Prometheus (например, при перегреве GPU).
-
-🔐 Безопасность
-Доступ к сервису защищён базовой HTTP-аутентификацией (htpasswd).
-
-HTTPS обеспечивается сертификатами Let\'s Encrypt.
-
-Секреты (токены, пароли) хранятся в GitHub Secrets и Kubernetes Secrets.
-
-GPU-нода — прерываемая ВМ, что снижает стоимость, но требует осторожности.
-
-💰 Экономия бюджета
-На этапе разработки всё запускается локально (бесплатно).
-
-В облаке используется прерываемая GPU-ВМ, которая автоматически останавливается ночью (скрипт в scripts/stop-cluster.sh).
-
-Object Storage и Container Registry тарифицируются за хранение — копейки.
-
-Важно: не забывай выключать кластер, когда не работаешь!
-Можно настроить автоматическое выключение по расписанию через Yandex Functions.
-
-🧪 Как тестировать
-Локально (CPU): быстрая проверка изменений, отладка манифестов, CI/CD.
-
-В облаке (GPU): финальное тестирование производительности, работы GPU, мониторинга.
-
-📈 Планы по улучшению (TODO)
-Добавить поддержку нескольких GPU
-
-Реализовать автоматическое масштабирование (HPA) по нагрузке GPU
-
-Интегрировать с Vault для управления секретами
-
-Добавить сбор логов (Loki/EFK)
-
-Написать тесты для пайплайна (conftest, kubeconform)
-
-👨‍💻 Автор
-Твоё Имя
-
-GitHub: @JrDeath1337
-
-LinkedIn: #####
-
-Telegram: #####
+.
+├── terraform/                # Инфраструктура (IaC)
+│   ├── main.tf               # Провайдер и общие настройки
+│   ├── network.tf            # VPC, Security Groups, VPN Gateway
+│   ├── db.tf                 # Конфигурация Managed PostgreSQL
+│   └── storage.tf            # Настройки S3 бакета
+├── docker/                   # Контейнеризация
+│   ├── comfyui/
+│   │   ├── Dockerfile        # База: rocm/pytorch (gfx1201 support)
+│   │   └── config.ini        # Настройки инференса
+│   └── vpn/
+│       └── wg0.conf          # Конфиг WireGuard клиента
+├── app/                      # Логика интеграции (Python)
+│   ├── logger.py             # Модуль записи событий в БД
+│   └── uploader.py           # Модуль синхронизации с S3
+├── proxy/                    # Облачный шлюз
+│   └── nginx.conf            # Настройки Reverse Proxy
+└── .github/
+    └── workflows/            # CI/CD пайплайны
