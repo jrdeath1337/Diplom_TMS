@@ -1,60 +1,5 @@
-Образ ComfyUI с ROCm 7.2 для AMD Radeon RX 9070 XT (gfx1201)
-Назначение
-Образ предназначен для запуска ComfyUI (генерация изображений) на локальном узле с AMD GPU серии RDNA 4 (например, RX 9070 XT, архитектура gfx1201). Используется ROCm 7.2 и PyTorch, собранный для ROCm, без каких-либо зависимостей от NVIDIA/CUDA.
 
-Этот образ — основа вычислительного воркера в гибридной системе: он получает задачи от облачного Kubernetes, генерирует изображения и возвращает результат.
-
-Что внутри
-Базовый образ: rocm/dev-ubuntu-22.04:7.2
-
-Установлены: git, python3-pip, wget, libgl1-mesa-glx, libglib2.0-0
-
-Установлен PyTorch для ROCm 7.2 (torch, torchvision, torchaudio) из официального индекса https://download.pytorch.org/whl/rocm7.2
-
-Клонирован репозиторий ComfyUI (последняя версия на момент сборки)
-
-Установлены все зависимости ComfyUI с принудительным использованием ROCm-индекса (чтобы не подтянуть CUDA-версии)
-
-Открыт порт 8188
-
-Точка входа: python3 main.py --listen 0.0.0.0 --port 8188
-
-Требования к хосту
-Операционная система: Linux с установленным ROCm-совместимым ядром (например, Ubuntu 22.04, Fedora/Nobara)
-
-GPU: AMD Radeon RX 9070 XT (или другая карта с архитектурой gfx1201 / RDNA 4)
-
-Драйверы: ROCm 7.2+ (или совместимые amdgpu)
-
-Docker: версия 20.10+ с поддержкой --device=/dev/kfd --device=/dev/dri
-
-Пространство: SSD с достаточным объёмом (образ весит ~15–20 ГБ, плюс модели)
-
-Сборка образа
-В директории с Dockerfile выполнить:
-
-bash
-docker build -t comfy-rocm7.2:latest .
-Запуск контейнера
-Базовый запуск (с веб-интерфейсом)
-bash
-docker run -d --name comfy-worker \
-  --device=/dev/kfd --device=/dev/dri \
-  --group-add=video --group-add=render \
-  --ipc=host \
-  -p 8188:8188 \
-  -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
-  comfy-rocm7.2:latest
-Запуск с монтированием папки для моделей (рекомендуется)
-bash
-docker run -d --name comfy-worker \
-  --device=/dev/kfd --device=/dev/dri \
-  --group-add=video --group-add=render \
-  --ipc=host \
-  -p 8188:8188 \
-  -v /путь/на/хосте/comfy-models:/comfyui/models \
-  -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
-  comfy-rocm7.2:latest
+```markdown
 # Образ ComfyUI с ROCm 7.2 для AMD Radeon RX 9070 XT (gfx1201)
 
 ## Назначение
@@ -88,6 +33,7 @@ docker run -d --name comfy-worker \
 
 ```bash
 docker build -t comfy-rocm7.2:latest .
+```
 
 ## Запуск контейнера
 
@@ -101,8 +47,9 @@ docker run -d --name comfy-worker \
   -p 8188:8188 \
   -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
   comfy-rocm7.2:latest
+```
 
-## Запуск с монтированием папки для моделей (рекомендуется)
+### Запуск с монтированием папки для моделей (рекомендуется)
 
 ```bash
 docker run -d --name comfy-worker \
@@ -113,8 +60,9 @@ docker run -d --name comfy-worker \
   -v /путь/на/хосте/comfy-models:/comfyui/models \
   -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
   comfy-rocm7.2:latest
+```
 
- ## Параметры запуска
+## Параметры запуска
 
 | Параметр | Значение |
 |----------|----------|
@@ -148,10 +96,16 @@ docker run -d --name comfy-worker \
 
 ## Сохранение образа (для переноса)
 
+Сохранить образ в архив:
+
 ```bash
 docker save comfy-rocm7.2:latest | gzip > comfy-rocm7.2.tar.gz
+```
 
-## Загрузить на другом хосте:
+Загрузить на другом хосте:
 
 ```bash
 docker load < comfy-rocm7.2.tar.gz
+```
+```
+
