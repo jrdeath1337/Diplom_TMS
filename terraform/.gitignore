@@ -16,3 +16,4 @@ override.tf.json
 
 # Секретные ключи авторизации (например, для Yandex Cloud или AWS)
 *.json
+*.env

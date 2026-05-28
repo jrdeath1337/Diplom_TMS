@@ -11,6 +11,4 @@ provider "aws" {
   skip_credentials_validation = true
   skip_region_validation      = true
   skip_requesting_account_id  = true
-  access_key                  = var.s3_access_key
-  secret_key                  = var.s3_secret_key
 }

@@ -3,18 +3,15 @@ resource "yandex_mdb_postgresql_cluster" "pg" {
   name               = "${var.project_name}-pg"
   environment        = "PRODUCTION"
   network_id         = yandex_vpc_network.main.id
-  security_group_ids = []
+  security_group_ids = [yandex_vpc_security_group.postgres_sg.id] # ← добавлено
 
-  # Блок config: здесь указываются ресурсы хостов, версия БД и т.д.
   config {
-    # Версия PostgreSQL теперь указывается здесь, внутри блока config!
     version = "16"
     resources {
-      resource_preset_id = "s2.micro" # 2 vCPU, 8 GB RAM
+      resource_preset_id = "s2.micro"
       disk_type_id       = "network-ssd"
       disk_size          = var.postgres_disk_size
     }
-    # Дополнительные параметры БД (опционально)
     postgresql_config = {
       max_connections = 100
     }
@@ -23,10 +20,11 @@ resource "yandex_mdb_postgresql_cluster" "pg" {
   host {
     zone             = var.yc_zone
     subnet_id        = yandex_vpc_subnet.subnet_a.id
-    assign_public_ip = true # для подключения из интернета (если нет VPN)
+    assign_public_ip = true
   }
 }
-# Пользователь создается отдельным ресурсом
+
+# Пользователь
 resource "yandex_mdb_postgresql_user" "worker" {
   cluster_id = yandex_mdb_postgresql_cluster.pg.id
   name       = var.postgres_user
@@ -34,11 +32,37 @@ resource "yandex_mdb_postgresql_user" "worker" {
   grants     = ["mdb_admin"]
 }
 
+# База данных
 resource "yandex_mdb_postgresql_database" "tasks_db" {
   cluster_id = yandex_mdb_postgresql_cluster.pg.id
   name       = var.postgres_dbname
   owner      = var.postgres_user
-
   depends_on = [yandex_mdb_postgresql_user.worker]
 }
 
+# Автоматическое создание таблицы tasks
+resource "null_resource" "create_tasks_table" {
+  depends_on = [
+    yandex_mdb_postgresql_database.tasks_db,
+    yandex_mdb_postgresql_user.worker
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      PGPASSWORD=${var.postgres_password} psql \
+        -h ${yandex_mdb_postgresql_cluster.pg.host[0].fqdn} \
+        -p 6432 \
+        -U ${var.postgres_user} \
+        -d ${var.postgres_dbname} \
+        -c "CREATE TABLE IF NOT EXISTS tasks (
+            id SERIAL PRIMARY KEY,
+            payload JSONB NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            result_url TEXT,
+            error_msg TEXT,
+            created_at TIMESTAMP DEFAULT now(),
+            updated_at TIMESTAMP DEFAULT now()
+          );"
+    EOT
+  }
+}

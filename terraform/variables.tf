@@ -65,5 +65,8 @@ variable "yc_token" {
   sensitive   = true
 }
 
-variable "s3_access_key" { sensitive = true }
-variable "s3_secret_key" { sensitive = true }
+variable "postgres_allowed_cidr" {
+  description = "CIDR block allowed to connect to PostgreSQL (e.g., '123.123.123.123/32')"
+  type        = string
+  default     = "0.0.0.0/0" # временно открыто всем, лучше подставить свой IP
+}

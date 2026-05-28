@@ -17,15 +17,6 @@ resource "yandex_resourcemanager_folder_iam_member" "storage_editor" {
   member    = "serviceAccount:${yandex_iam_service_account.worker_sa.id}"
 }
 
-output "worker_sa_access_key" {
-  value     = yandex_iam_service_account_static_access_key.worker_sa_key.access_key
-  sensitive = true
-}
-
-output "worker_sa_secret_key" {
-  value     = yandex_iam_service_account_static_access_key.worker_sa_key.secret_key
-  sensitive = true
-}
 # (Опционально) Даём права на чтение Managed PostgreSQL (не обязательно, т.к. аутентификация по паролю)
 # Но если хотите использовать IAM-доступ к БД, раскомментируйте:
 # resource "yandex_resourcemanager_folder_iam_member" "postgres_viewer" {
