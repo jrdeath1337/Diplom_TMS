@@ -12,3 +12,12 @@ provider "aws" {
   skip_region_validation      = true
   skip_requesting_account_id  = true
 }
+
+terraform {
+  required_providers {
+    yandex = {
+      source  = "yandex-cloud/yandex"
+      version = "~> 0.130" # или последняя стабильная: "0.130.0"
+    }
+  }
+}

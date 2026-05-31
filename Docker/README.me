@@ -1,111 +1,141 @@
+Docker: контейнеризация
 
-```markdown
-# Образ ComfyUI с ROCm 7.2 для AMD Radeon RX 9070 XT (gfx1201)
+API образ (Docker/api/Dockerfile)
+dockerfile
+FROM python:3.10-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY api_server.py .
+EXPOSE 8888
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8888"]
+Worker образ (Docker/worker/Dockerfile)
+CPU-версия ComfyUI: базовый ubuntu:22.04 с установленным PyTorch CPU, ComfyUI и зависимостями. Подробности в Docker/worker/.
 
-## Назначение
+Entrypoint воркера (Docker/entrypoint.sh)
+Запускает ComfyUI с флагом --cpu
 
-Образ предназначен для запуска **ComfyUI** (генерация изображений) на локальном узле с **AMD GPU серии RDNA 4** (например, RX 9070 XT, архитектура `gfx1201`). Используется **ROCm 7.2** и **PyTorch, собранный для ROCm**, без зависимостей от NVIDIA/CUDA.
+Ожидает готовности API
 
-Этот образ — основа вычислительного воркера в гибридной системе: он получает задачи от облачного Kubernetes, генерирует изображения и возвращает результат.
+Устанавливает Python-зависимости воркера (psycopg2-binary, boto3, requests)
 
-## Что внутри
+Запускает worker_core.py
 
-- Базовый образ: `rocm/dev-ubuntu-22.04:7.2`
-- Установлены: `git`, `python3-pip`, `wget`, `libgl1-mesa-glx`, `libglib2.0-0`
-- Установлен PyTorch для ROCm 7.2 (`torch`, `torchvision`, `torchaudio`) из официального индекса  
-  `https://download.pytorch.org/whl/rocm7.2`
-- Клонирован репозиторий ComfyUI (последняя версия на момент сборки)
-- Установлены зависимости ComfyUI с принудительным использованием ROCm-индекса (чтобы не подтянуть CUDA-версии)
-- Открыт порт `8188`
-- Точка входа: `python3 main.py --listen 0.0.0.0 --port 8188`
+Благодаря этому контейнер полностью автономен – не требует ручных команд docker exec.
 
-## Требования к хосту
+API Server (FastAPI)
+Приложение реализует три эндпоинта:
 
-- **Операционная система**: Linux с установленным ROCm-совместимым ядром (Ubuntu 22.04, Fedora/Nobara)
-- **GPU**: AMD Radeon RX 9070 XT (или другая карта с архитектурой `gfx1201` / RDNA 4)
-- **Драйверы**: ROCm 7.2+ (или совместимые amdgpu)
-- **Docker**: версия 20.10+ с поддержкой `--device=/dev/kfd --device=/dev/dri`
-- **Пространство**: SSD с достаточным объёмом (образ весит ~15–20 ГБ, плюс модели)
+Метод	URL	Описание
+GET	/health	Проверка живости
+POST	/generate	Создать задачу на генерацию
+GET	/status/{task_id}	Получить статус и результат задачи
+Параметры /generate
+json
+{
+  "prompt": "a cat, high quality",
+  "negative_prompt": "bad quality, blurry",
+  "model": "dreamshaperXL_lightningDPMSDE.safetensors",
+  "width": 1024,
+  "height": 1024,
+  "steps": 5,
+  "cfg": 1.5,
+  "seed": -1
+}
+Ответ:
 
-## Сборка образа
+json
+{"task_id": 42, "message": "Task queued"}
+Параметры /status/{task_id}
+Возвращает объект задачи: статус (pending, processing, completed, failed), ссылку на результат, ошибки.
 
-В директории с `Dockerfile` выполнить:
+Worker (обработчик задач)
+worker_core.py выполняет основной рабочий цикл:
 
-```bash
-docker build -t comfy-rocm7.2:latest .
-```
+Атомарно захватывает задачу со статусом pending (FOR UPDATE SKIP LOCKED)
 
-## Запуск контейнера
+Отправляет payload в ComfyUI (POST /prompt)
 
-### Базовый запуск (с веб-интерфейсом)
+Ожидает завершения генерации, опрашивая /history/{prompt_id}
 
-```bash
-docker run -d --name comfy-worker \
-  --device=/dev/kfd --device=/dev/dri \
-  --group-add=video --group-add=render \
-  --ipc=host \
-  -p 8188:8188 \
-  -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
-  comfy-rocm7.2:latest
-```
+Сохраняет результат из /comfyui/output/ в Yandex S3
 
-### Запуск с монтированием папки для моделей (рекомендуется)
+Обновляет статус задачи в БД (completed/failed)
 
-```bash
-docker run -d --name comfy-worker \
-  --device=/dev/kfd --device=/dev/dri \
-  --group-add=video --group-add=render \
-  --ipc=host \
-  -p 8188:8188 \
-  -v /путь/на/хосте/comfy-models:/comfyui/models \
-  -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
-  comfy-rocm7.2:latest
-```
+Ключевые особенности:
 
-## Параметры запуска
+Graceful shutdown (SIGTERM, SIGINT)
 
-| Параметр | Значение |
-|----------|----------|
-| `--device=/dev/kfd --device=/dev/dri` | Проброс устройств AMD GPU |
-| `--group-add=video --group-add=render` | Добавление в группы для доступа к `/dev/dri/render*` |
-| `--ipc=host` | Использование разделяемой памяти хоста (некоторые модели требуют большого `/dev/shm`) |
-| `-p 8188:8188` | Проброс порта веб-интерфейса |
-| `-v /хост/путь:/comfyui/models` | Монтирование папки с моделями (чтобы не хранить их внутри контейнера) |
-| `-e HSA_OVERRIDE_GFX_VERSION=11.0.0` | **Ключевая переменная** – заставляет ROCm считать карту `gfx1201` совместимой с `gfx1100`. Без неё PyTorch не увидит GPU. |
+Настраиваемый таймаут (GENERATION_TIMEOUT)
 
-## Проверка работоспособности
+Повторное соединение с БД при ошибках
 
-1. Откройте браузер и перейдите по адресу `http://localhost:8188`
-2. Загрузите любую модель (например, SD 1.5) в папку `comfy-models/checkpoints` (на хосте)
-3. Выберите шаблон или создайте простой workflow
-4. Нажмите "Queue Prompt" и проверьте генерацию
+Поддержка любого workflow, совместимого с ComfyUI API
 
-Если в логах контейнера есть строки `Using device: cuda:0` – GPU используется.
+Веб-интерфейс
+Встроен в API по адресу /ui. Простая HTML-страница с полями:
 
-## Ограничения и известные проблемы
+Позитивный и негативный промпты
 
-- **Архитектура `gfx1201` официально не поддерживается в ROCm 7.2**. Переменная `HSA_OVERRIDE_GFX_VERSION=11.0.0` – это обходной путь, который может приводить к редким ошибкам при выполнении некоторых ядер (например, при использовании FP8 или специфичных операций).
-- Если вы столкнётесь с ошибками `hipErrorNoBinaryForGpu`, попробуйте установить `HSA_OVERRIDE_GFX_VERSION=11.0.1` или `11.0.2`.
-- При первом запуске ComfyUI может создавать папку `models` внутри контейнера, если она не смонтирована. Чтобы модели сохранялись между перезапусками, **обязательно используйте том**.
+Выбор модели
 
-## Что можно улучшить (для диплома)
+Количество шагов и CFG
 
-- Добавить `worker_core.py` в тот же образ (скрипт, который будет принимать HTTP-запросы или слушать очередь Redis)
-- Настроить healthcheck для Docker (чтобы Kubernetes мог мониторить воркер)
-- Использовать `docker-compose` для локального тестирования с PostgreSQL, Redis и MinIO (эмулятор S3)
+Кнопка Generate
 
-## Сохранение образа (для переноса)
+JavaScript автоматически опрашивает /status/{task_id} каждые 3 секунды и отображает результат, как только он готов. Дублирование статуса исправлено.
 
-Сохранить образ в архив:
+Docker Compose
+docker-compose.yml в корне проекта описывает оба сервиса:
 
-```bash
-docker save comfy-rocm7.2:latest | gzip > comfy-rocm7.2.tar.gz
-```
+yaml
+services:
+  api:
+    build: ./Docker/api
+    image: hybrid-api:latest
+    ports:
+      - "8888:8888"
+    env_file:
+      - ./terraform/cpu-worker.env
 
-Загрузить на другом хосте:
+  worker:
+    build: ./Docker/worker
+    image: cpu-worker-cpu:latest
+    ports:
+      - "8188:8188"   # ComfyUI web UI (опционально)
+    volumes:
+      - ./app:/app
+      - ./Docker/entrypoint.sh:/entrypoint.sh:ro
+      - ~/NVMe/comfy-models:/comfyui/models
+    env_file:
+      - ./terraform/cpu-worker.env
+    entrypoint: ["/entrypoint.sh"]
+Основные команды:
 
-```bash
-docker load < comfy-rocm7.2.tar.gz
-```
-```
+bash
+docker compose up -d      # запустить всё
+docker compose down       # остановить и удалить контейнеры
+docker compose logs -f    # следить за логами
+docker compose build      # пересобрать образы
+CI/CD и дальнейшее развитие
+Проект готов к интеграции с GitHub Actions:
 
+Сборка образов при пуше в main
+
+Деплой API в Managed Kubernetes (Yandex Managed K8s)
+
+Добавление мониторинга (Prometheus + Grafana)
+
+Централизованное логирование (ELK / Loki)
+
+Текущая версия демонстрирует полностью работоспособный прототип, который можно презентовать.
+
+Известные ограничения
+CPU-режим работает медленно (генерация 1024×1024 – около 2 минут на современном процессоре). Для production следует переключиться на GPU-образ с ROCm.
+
+PostgreSQL открыт для всех IP (0.0.0.0/0) – в реальной среде необходимо ограничить доступ через VPN/WireGuard.
+
+Один воркер – для масштабирования нужно добавить несколько воркеров с блокировками на уровне БД.
+
+Модель SDXL Lightning – жёстко зашита в примере. Легко сменить через параметр model в API.

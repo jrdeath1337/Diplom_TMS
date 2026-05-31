@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: ./Docker/api          # путь к папке с Dockerfile и кодом API
+      dockerfile: Dockerfile
+    image: hybrid-api:latest         # имя будущего образа (локального)
+    container_name: api-server
+    ports:
+      - "8888:8888"
+    env_file:
+      - ./terraform/cpu-worker.env
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./Docker/worker       # путь к папке с Dockerfile воркера (CPU)
+      dockerfile: Dockerfile
+    image: cpu-worker:latest
+    container_name: gpu-worker
+    ports:
+      - "8188:8188"                  # опционально, если нужен веб-интерфейс ComfyUI
+    volumes:
+      - ./app:/app
+      - ./Docker/entrypoint.sh:/entrypoint.sh:ro
+      - ~/NVMe/comfy-models:/comfyui/models
+    env_file:
+      - ./terraform/cpu-worker.env
+    entrypoint: ["/entrypoint.sh"]
+    restart: unless-stopped

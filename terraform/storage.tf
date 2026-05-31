@@ -5,6 +5,7 @@ resource "yandex_storage_bucket" "images" {
   # Убираем устаревший аргумент acl
   # depends_on больше не нужен, так как для создания бакета права не требуются
   depends_on = [yandex_resourcemanager_folder_iam_member.storage_editor]
+  force_destroy = true
 
   cors_rule {
     allowed_headers = ["*"]
