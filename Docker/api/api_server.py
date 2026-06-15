@@ -27,6 +27,10 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="Hybrid GPU API", version="1.0.0")
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
+instrumentator = Instrumentator().instrument(app)
+instrumentator.expose(app)  # создаст эндпоинт /metrics
 # Разрешаем запросы от любого источника (для разработки)
 app.add_middleware(
     CORSMiddleware,

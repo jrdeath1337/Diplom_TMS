@@ -1,0 +1,18 @@
+helm/hybrid-api/values.yaml
+# Файлы состояния (содержат секреты в открытом виде)
+*.tfstate
+*.tfstate.*
+
+# Файлы с переменными (могут содержать пароли и токены)
+*.tfvars
+*.tfvars.json
+
+# Локальные файлы конфигурации переопределения (override)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Секретные ключи авторизации (например, для Yandex Cloud или AWS)
+*.json
+*.env
