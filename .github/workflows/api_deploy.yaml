@@ -79,9 +79,6 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
           export KUBECONFIG=/tmp/kubeconfig
 
-      - name: Remove profile from kubeconfig
-        run: sed -i 's/--profile=tms-terra *//g; s/  */ /g' /tmp/kubeconfig
-
       - name: Deploy to Kubernetes
         env:
           YC_TOKEN: ${{ secrets.YC_OAUTH_TOKEN }}
