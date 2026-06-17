@@ -7,7 +7,6 @@ Worker для гибридной системы Yandex Cloud + локальны�
 - Обновляет статус задачи (completed/failed) и сохраняет ссылку на результат
 """
 
-
 import logging
 import os
 import signal
