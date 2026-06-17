@@ -87,5 +87,9 @@ jobs:
           export KUBECONFIG=/tmp/kubeconfig
           helm upgrade --install hybrid-api ./helm/hybrid-api \
             --set image.tag=${{ env.SHORT_SHA }} \
-            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            --set service.port=8888 \
+            --set ingress.enabled=true \
+            --set ingress.className=nginx \
+            --set ingress.host=api.${{ secrets.INGRESS_IP }}.nip.io
 
