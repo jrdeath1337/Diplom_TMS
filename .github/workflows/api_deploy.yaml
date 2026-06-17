@@ -32,7 +32,6 @@ jobs:
           pip install flake8 black isort pytest requests httpx2 fastapi uvicorn psycopg2-binary boto3 prometheus-fastapi-instrumentator
 
       - name: Lint with flake8
-        # Исключаем длинные строки в api_server.py (HTML)
         run: flake8 app/worker_core.py Docker/api/api_server.py --max-line-length 100 --exclude Docker/api/api_server.py
 
       - name: Check formatting with black
@@ -47,7 +46,6 @@ jobs:
   build-and-deploy:
     needs: lint-and-test
     runs-on: ubuntu-latest
-    if: success()
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -74,18 +72,20 @@ jobs:
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
+      - name: Configure yc authentication
+        run: |
+          yc config set token ${{ secrets.YC_OAUTH_TOKEN }}
+          yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+
       - name: Setup kubeconfig
         run: |
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
 
       - name: Deploy to Kubernetes
-        env:
-          YC_TOKEN: ${{ secrets.YC_OAUTH_TOKEN }}
-          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
-          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
         run: |
           export KUBECONFIG=/tmp/kubeconfig
           helm upgrade --install hybrid-api ./helm/hybrid-api \
             --set image.tag=${{ env.SHORT_SHA }} \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
