@@ -9,7 +9,7 @@ on:
       - 'helm/hybrid-api/**'
       - 'app/**'
       - 'tests/**'
-      - '.github/workflows/api_deploy.yaml'
+      - '.github/workflows/deploy.yml'
 
 env:
   REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
@@ -31,14 +31,14 @@ jobs:
         run: |
           pip install flake8 black isort pytest requests httpx2 fastapi uvicorn psycopg2-binary boto3 prometheus-fastapi-instrumentator
 
-      - name: Lint with flake8
-        run: flake8 app/worker_core.py Docker/api/api_server.py --max-line-length 100 --exclude Docker/api/api_server.py
-
       - name: Check formatting with black
         run: black --check app/worker_core.py Docker/api/api_server.py
 
       - name: Check imports with isort
         run: isort --check app/worker_core.py Docker/api/api_server.py
+
+      - name: Lint with flake8
+        run: flake8 app/worker_core.py Docker/api/api_server.py --max-line-length 100
 
       - name: Run unit tests
         run: pytest tests/ -v
@@ -84,18 +84,35 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
           export KUBECONFIG=/tmp/kubeconfig
 
+      - name: Fix kubeconfig for CI
+        run: |
+          pip install pyyaml
+          python3 -c "
+          import yaml
+          with open('/tmp/kubeconfig') as f:
+              config = yaml.safe_load(f)
+          for user in config.get('users', []):
+              exec_opts = user.get('user', {}).get('exec')
+              if exec_opts:
+                  if exec_opts.get('command') == '/home/jrdeath/yandex-cloud/bin/yc':
+                      exec_opts['command'] = 'yc'
+                  args = exec_opts.get('args', [])
+                  if '--profile' in args:
+                      idx = args.index('--profile')
+                      del args[idx:idx+2]
+                  args = [a for a in args if a]
+                  exec_opts['args'] = args
+          with open('/tmp/kubeconfig', 'w') as f:
+              yaml.dump(config, f, default_flow_style=False)
+          "
+
       - name: Deploy to Kubernetes
         run: |
           export KUBECONFIG=/tmp/kubeconfig
-          
-          # Очищаем IP от переносов строк (\n) и пробелов
-          CLEAN_IP=$(echo "${{ secrets.INGRESS_IP }}" | tr -d '\r\n ' )
-          
           helm upgrade --install hybrid-api ./helm/hybrid-api \
             --set image.tag=${{ env.SHORT_SHA }} \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
             --set service.port=8888 \
             --set ingress.enabled=true \
             --set ingress.className=nginx \
-            --set ingress.host="api.${CLEAN_IP}.nip.io"
-
+            --set ingress.host=api.${{ secrets.INGRESS_IP }}.nip.io

@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-monitor
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: hybrid-api
+  endpoints:
+    - targetPort: 8888
+      path: /metrics
+      interval: 30s
