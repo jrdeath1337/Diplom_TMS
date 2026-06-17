@@ -73,42 +73,17 @@ jobs:
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
-      - name: Configure yc authentication
+      - name: Configure yc and get kubeconfig
         run: |
           yc config set token ${{ secrets.YC_OAUTH_TOKEN }}
           yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
           yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
-
-      - name: Setup kubeconfig
-        run: |
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
-
-      - name: Fix kubeconfig for CI
-        run: |
-          pip install pyyaml
-          python3 -c "
-          import yaml
-          with open('/tmp/kubeconfig') as f:
-              config = yaml.safe_load(f)
-          for user in config.get('users', []):
-              exec_opts = user.get('user', {}).get('exec')
-              if exec_opts:
-                  if exec_opts.get('command') == '/home/jrdeath/yandex-cloud/bin/yc':
-                      exec_opts['command'] = 'yc'
-                  args = exec_opts.get('args', [])
-                  if '--profile' in args:
-                      idx = args.index('--profile')
-                      del args[idx:idx+2]
-                  args = [a for a in args if a]
-                  exec_opts['args'] = args
-          with open('/tmp/kubeconfig', 'w') as f:
-              yaml.dump(config, f, default_flow_style=False)
-          "
+          yc managed-kubernetes cluster get-credentials ${{ secrets.YC_CLUSTER_ID }} --external --force
+          # теперь kubeconfig создан в ~/.kube/config
 
       - name: Deploy to Kubernetes
         run: |
-          export KUBECONFIG=/tmp/kubeconfig
+          export KUBECONFIG=~/.kube/config
           helm upgrade --install hybrid-api ./helm/hybrid-api \
             --set image.tag=${{ env.SHORT_SHA }} \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
