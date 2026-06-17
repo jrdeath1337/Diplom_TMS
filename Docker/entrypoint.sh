@@ -18,7 +18,6 @@ done
 
 # Устанавливаем зависимости воркера (если не установлены)
 pip3 install -q psycopg2-binary boto3 requests
-
 # Запускаем воркер
 cd /app
 echo "Starting worker..."

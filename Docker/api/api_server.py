@@ -4,19 +4,17 @@ FastAPI-сервис для приёма промптов и проверки с
 Общается с той же PostgreSQL, куда worker_core.py складывает результаты.
 """
 
-import os
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 import psycopg2
 import psycopg2.extras
-
-
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 # --------------------------- Config ---------------------------
 DB_DSN = os.getenv("DB_DSN")  # Единый DSN из env-файла
@@ -42,6 +40,7 @@ app.add_middleware(
 # --------------------------- HTML ---------------------------
 from fastapi.responses import HTMLResponse
 
+
 @app.get("/")
 def root():
     return {
@@ -49,10 +48,11 @@ def root():
         "endpoints": {
             "POST /generate": "Create a new image generation task",
             "GET /status/{task_id}": "Check task status and get result",
-            "GET /health": "Health check"
+            "GET /health": "Health check",
         },
-        "docs": "/docs"
+        "docs": "/docs",
     }
+
 
 @app.get("/ui", response_class=HTMLResponse)
 def ui():
@@ -121,18 +121,23 @@ def ui():
         </script>
     </body>
     </html>
-    """   
+    """
     # --------------------------- Models ---------------------------
+
+
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., description="Текст позитивного промпта")
     negative_prompt: str = Field(default="", description="Негативный промпт")
-    model: str = Field(default="dreamshaperXL_lightningDPMSDE.safetensors",
-                       description="Имя файла модели в /comfyui/models/checkpoints")
+    model: str = Field(
+        default="dreamshaperXL_lightningDPMSDE.safetensors",
+        description="Имя файла модели в /comfyui/models/checkpoints",
+    )
     width: int = Field(default=1024, ge=64, le=2048)
     height: int = Field(default=1024, ge=64, le=2048)
     steps: int = Field(default=5, ge=1, le=150)
     cfg: float = Field(default=1.5, ge=1.0, le=30.0)
     seed: int = Field(default=-1, description="Seed (-1 для случайного)")
+
 
 class TaskStatus(BaseModel):
     task_id: int
@@ -142,26 +147,29 @@ class TaskStatus(BaseModel):
     created_at: str
     updated_at: str
 
+
 # --------------------------- DB helpers ---------------------------
 def get_db():
     return psycopg2.connect(DB_DSN, cursor_factory=psycopg2.extras.DictCursor)
 
+
 def build_payload(req: GenerateRequest) -> dict:
     """Собирает workflow для SDXL (как в проверенной задаче #5)"""
     import random
+
     seed = req.seed if req.seed != -1 else random.randint(0, 2**31 - 1)
     return {
         "1": {
             "class_type": "CheckpointLoaderSimple",
-            "inputs": {"ckpt_name": req.model}
+            "inputs": {"ckpt_name": req.model},
         },
         "2": {
             "class_type": "CLIPTextEncode",
-            "inputs": {"text": req.prompt, "clip": ["1", 1]}
+            "inputs": {"text": req.prompt, "clip": ["1", 1]},
         },
         "3": {
             "class_type": "EmptyLatentImage",
-            "inputs": {"width": req.width, "height": req.height, "batch_size": 1}
+            "inputs": {"width": req.width, "height": req.height, "batch_size": 1},
         },
         "4": {
             "class_type": "KSampler",
@@ -175,18 +183,19 @@ def build_payload(req: GenerateRequest) -> dict:
                 "model": ["1", 0],
                 "positive": ["2", 0],
                 "negative": ["2", 0],  # повторяем позитивный (для упрощения)
-                "latent_image": ["3", 0]
-            }
+                "latent_image": ["3", 0],
+            },
         },
         "5": {
             "class_type": "VAEDecode",
-            "inputs": {"samples": ["4", 0], "vae": ["1", 2]}
+            "inputs": {"samples": ["4", 0], "vae": ["1", 2]},
         },
         "6": {
             "class_type": "SaveImage",
-            "inputs": {"filename_prefix": "ComfyUI", "images": ["5", 0]}
-        }
+            "inputs": {"filename_prefix": "ComfyUI", "images": ["5", 0]},
+        },
     }
+
 
 # --------------------------- Endpoints ---------------------------
 @app.post("/generate", response_model=dict)
@@ -198,7 +207,7 @@ def create_task(req: GenerateRequest):
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO tasks (payload, status, created_at, updated_at) VALUES (%s, 'pending', now(), now()) RETURNING id",
-                (json.dumps(payload),)
+                (json.dumps(payload),),
             )
             task_id = cur.fetchone()[0]
         conn.commit()
@@ -211,6 +220,7 @@ def create_task(req: GenerateRequest):
     finally:
         conn.close()
 
+
 @app.get("/status/{task_id}", response_model=TaskStatus)
 def get_status(task_id: int):
     """Возвращает статус задачи и ссылку на результат, если готов"""
@@ -219,7 +229,7 @@ def get_status(task_id: int):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, status, result_url, error_msg, created_at, updated_at FROM tasks WHERE id = %s",
-                (task_id,)
+                (task_id,),
             )
             row = cur.fetchone()
         if row is None:
@@ -230,7 +240,7 @@ def get_status(task_id: int):
             result_url=row["result_url"],
             error_msg=row["error_msg"],
             created_at=row["created_at"].isoformat(),
-            updated_at=row["updated_at"].isoformat()
+            updated_at=row["updated_at"].isoformat(),
         )
     except HTTPException:
         raise
@@ -240,11 +250,66 @@ def get_status(task_id: int):
     finally:
         conn.close()
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
+@app.post("/register-worker")
+def register_worker(ip: str, port: int = 8000):
+    """Регистрирует внешний IP воркера как Kubernetes Service worker-metrics"""
+    try:
+        from kubernetes import client, config
+        config.load_incluster_config()
+        v1 = client.CoreV1Api()
+
+        service_name = "worker-metrics"
+        namespace = "default"
+
+        # Пробуем найти сервис
+        try:
+            svc = v1.read_namespaced_service(service_name, namespace)
+            # Обновляем IP в endpoint'е (через создание/обновление Endpoints напрямую)
+            # Проще заменить сервис полностью или создать/обновить Endpoints
+            # Создаем/обновляем Endpoints
+            endpoints = client.V1Endpoints(
+                metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
+                subsets=[client.V1EndpointSubset(
+                    addresses=[client.V1EndpointAddress(ip=ip)],
+                    ports=[client.V1EndpointPort(port=port)]
+                )]
+            )
+            try:
+                v1.replace_namespaced_endpoints(service_name, namespace, endpoints)
+            except:
+                v1.create_namespaced_endpoints(namespace, endpoints)
+        except:
+            # Сервиса нет, создаем headless сервис и endpoints
+            service = client.V1Service(
+                metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
+                spec=client.V1ServiceSpec(
+                    cluster_ip="None",  # headless
+                    ports=[client.V1ServicePort(port=port, target_port=port)]
+                )
+            )
+            v1.create_namespaced_service(namespace, service)
+            endpoints = client.V1Endpoints(
+                metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
+                subsets=[client.V1EndpointSubset(
+                    addresses=[client.V1EndpointAddress(ip=ip)],
+                    ports=[client.V1EndpointPort(port=port)]
+                )]
+            )
+            v1.create_namespaced_endpoints(namespace, endpoints)
+
+        logger.info(f"Worker registered: {ip}:{port}")
+        return {"status": "ok", "message": f"Worker {ip}:{port} registered"}
+    except Exception as e:
+        logger.exception("Failed to register worker")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --------------------------- Main ---------------------------
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("api_server:app", host="0.0.0.0", port=8888, reload=True)

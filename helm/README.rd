@@ -24,6 +24,7 @@ kubectl get nodes   # должно показать две ноды
 bash
 docker rmi -f $(docker images -q --filter "reference=*/hybrid-api") 2>/dev/null; true
 docker builder prune -af
+docker system prune -a --volumes --all --force
 Затем выполните сборку и пуш:
 
 bash

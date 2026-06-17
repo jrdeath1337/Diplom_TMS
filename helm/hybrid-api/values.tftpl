@@ -14,6 +14,12 @@ ingress:
   className: nginx
   host: ${ingress_host}
 
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  interval: 15s
+  releaseLabel: monitoring
+
 env:
   DB_DSN: "${db_dsn}"
   S3_BUCKET: "${s3_bucket}"

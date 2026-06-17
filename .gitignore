@@ -2,6 +2,7 @@ helm/hybrid-api/values.yaml
 # Файлы состояния (содержат секреты в открытом виде)
 *.tfstate
 *.tfstate.*
+.terraform/
 
 # Файлы с переменными (могут содержать пароли и токены)
 *.tfvars
