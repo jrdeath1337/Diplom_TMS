@@ -7,6 +7,9 @@
 *.tfvars
 *.tfvars.json
 
+# Исключаем дашборды из игнорирования
+!monitoring-dashboards/*.json
+
 # Локальные файлы конфигурации переопределения (override)
 override.tf
 override.tf.json
