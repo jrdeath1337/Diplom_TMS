@@ -80,7 +80,7 @@ jobs:
           export KUBECONFIG=/tmp/kubeconfig
 
       - name: Remove profile from kubeconfig
-        run: sed -i 's/--profile=tms-terra//g' /tmp/kubeconfig
+        run: sed -i 's/--profile=tms-terra *//g; s/  */ /g' /tmp/kubeconfig
 
       - name: Deploy to Kubernetes
         env:
