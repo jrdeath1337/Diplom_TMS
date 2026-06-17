@@ -87,10 +87,15 @@ jobs:
       - name: Deploy to Kubernetes
         run: |
           export KUBECONFIG=/tmp/kubeconfig
+          
+          # Очищаем IP от переносов строк (\n) и пробелов
+          CLEAN_IP=$(echo "${{ secrets.INGRESS_IP }}" | tr -d '\r\n ' )
+          
           helm upgrade --install hybrid-api ./helm/hybrid-api \
             --set image.tag=${{ env.SHORT_SHA }} \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
             --set service.port=8888 \
             --set ingress.enabled=true \
             --set ingress.className=nginx \
-            --set ingress.host="api.${{ secrets.INGRESS_IP }}.nip.io"
+            --set ingress.host="api.${CLEAN_IP}.nip.io"
+
