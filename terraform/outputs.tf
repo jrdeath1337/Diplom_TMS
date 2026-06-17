@@ -28,3 +28,8 @@ output "s3_endpoint" {
 output "poll_interval" {
   value = 5
 }
+
+output "kubeconfig_command" {
+  value = "yc managed-kubernetes cluster get-credentials ${yandex_kubernetes_cluster.main.id} --external"
+}
+

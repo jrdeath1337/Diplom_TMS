@@ -1,0 +1,82 @@
+name: Build, Test and Deploy API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Docker/api/**'
+      - 'helm/hybrid-api/**'
+      - 'app/**'
+      - 'tests/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+  IMAGE_NAME: hybrid-api
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install flake8 black isort pytest requests fastapi uvicorn psycopg2-binary boto3 prometheus-fastapi-instrumentator
+
+      - name: Lint with flake8
+        # Исключаем длинные строки в api_server.py (HTML)
+        run: flake8 app/worker_core.py Docker/api/api_server.py --max-line-length 100 --exclude Docker/api/api_server.py
+
+      - name: Check formatting with black
+        run: black --check app/worker_core.py Docker/api/api_server.py
+
+      - name: Check imports with isort
+        run: isort --check app/worker_core.py Docker/api/api_server.py
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+  build-and-deploy:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set short commit hash
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Log in to Yandex Container Registry
+        run: |
+          echo "${{ secrets.YC_OAUTH_TOKEN }}" | docker login --username oauth --password-stdin cr.yandex
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Docker/api
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+
+      - name: Deploy to Kubernetes
+        run: |
+          export KUBECONFIG=/tmp/kubeconfig
+          helm upgrade --install hybrid-api ./helm/hybrid-api \
+            --set image.tag=${{ env.SHORT_SHA }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}

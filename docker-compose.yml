@@ -18,7 +18,7 @@ services:
     image: cpu-worker:latest
     container_name: gpu-worker
     ports:
-      - "8188:8188"                  # опционально, если нужен веб-интерфейс ComfyUI
+      - "8188:8188" # опционально, если нужен веб-интерфейс ComfyUI
     volumes:
       - ./app:/app
       - ./Docker/entrypoint.sh:/entrypoint.sh:ro
