@@ -70,15 +70,30 @@ helm upgrade --install hybrid-api ./helm/hybrid-api \
 
 # 6. Автоматическая настройка Grafana (дашборд FastAPI) – опционально
 echo "⏳ Waiting for Grafana to be ready..."
-until curl -s -o /dev/null "http://grafana.$INGRESS_IP.nip.io"; do sleep 3; done
+# Проверяем /api/health (не требует авторизации)
+until [ "$(curl -s -o /dev/null -w '%{http_code}' "http://grafana.$INGRESS_IP.nip.io/api/health")" -eq 200 ]; do
+    sleep 3
+done
+echo "✅ Grafana is ready."
 
 DASHBOARD_JSON="monitoring-dashboards/fastapi-metrics.json"
 if [ -f "$DASHBOARD_JSON" ]; then
     echo "Importing dashboard..."
-    curl -s -u "admin:${GRAFANA_PASSWORD}" -X POST "http://grafana.$INGRESS_IP.nip.io/api/dashboards/db" \
+    # Импорт дашборда с проверкой ответа
+    RESPONSE=$(curl -s -u "admin:${GRAFANA_PASSWORD}" -X POST "http://grafana.$INGRESS_IP.nip.io/api/dashboards/db" \
         -H "Content-Type: application/json" \
-        -d "{\"dashboard\":$(cat $DASHBOARD_JSON),\"overwrite\":true}"
-    echo ""
+        -d "{\"dashboard\":$(cat $DASHBOARD_JSON),\"overwrite\":true}" \
+        -w '%{http_code}')
+    # Успешный импорт — коды 200 (обновление) или 201 (создание)
+    if [[ "$RESPONSE" == "200" || "$RESPONSE" == "201" ]]; then
+        echo "✅ Dashboard imported successfully."
+    else
+        echo "❌ Failed to import dashboard. HTTP status: $RESPONSE"
+        # Дополнительно можно вывести тело ответа для диагностики
+        # curl -s -u "admin:${GRAFANA_PASSWORD}" -X POST ... (без -w)
+    fi
+else
+    echo "⚠️ Dashboard file not found: $DASHBOARD_JSON"
 fi
 
 echo ""

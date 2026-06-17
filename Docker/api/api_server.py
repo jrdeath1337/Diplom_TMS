@@ -1,3 +1,4 @@
+# flake8: noqa: E402 E501
 #!/usr/bin/env python3
 """
 FastAPI-сервис для приёма промптов и проверки статуса задач.
@@ -255,11 +256,13 @@ def get_status(task_id: int):
 def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
+
 @app.post("/register-worker")
 def register_worker(ip: str, port: int = 8000):
     """Регистрирует внешний IP воркера как Kubernetes Service worker-metrics"""
     try:
         from kubernetes import client, config
+
         config.load_incluster_config()
         v1 = client.CoreV1Api()
 
@@ -274,10 +277,12 @@ def register_worker(ip: str, port: int = 8000):
             # Создаем/обновляем Endpoints
             endpoints = client.V1Endpoints(
                 metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
-                subsets=[client.V1EndpointSubset(
-                    addresses=[client.V1EndpointAddress(ip=ip)],
-                    ports=[client.V1EndpointPort(port=port)]
-                )]
+                subsets=[
+                    client.V1EndpointSubset(
+                        addresses=[client.V1EndpointAddress(ip=ip)],
+                        ports=[client.V1EndpointPort(port=port)],
+                    )
+                ],
             )
             try:
                 v1.replace_namespaced_endpoints(service_name, namespace, endpoints)
@@ -289,16 +294,18 @@ def register_worker(ip: str, port: int = 8000):
                 metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
                 spec=client.V1ServiceSpec(
                     cluster_ip="None",  # headless
-                    ports=[client.V1ServicePort(port=port, target_port=port)]
-                )
+                    ports=[client.V1ServicePort(port=port, target_port=port)],
+                ),
             )
             v1.create_namespaced_service(namespace, service)
             endpoints = client.V1Endpoints(
                 metadata=client.V1ObjectMeta(name=service_name, namespace=namespace),
-                subsets=[client.V1EndpointSubset(
-                    addresses=[client.V1EndpointAddress(ip=ip)],
-                    ports=[client.V1EndpointPort(port=port)]
-                )]
+                subsets=[
+                    client.V1EndpointSubset(
+                        addresses=[client.V1EndpointAddress(ip=ip)],
+                        ports=[client.V1EndpointPort(port=port)],
+                    )
+                ],
             )
             v1.create_namespaced_endpoints(namespace, endpoints)
 
@@ -307,6 +314,7 @@ def register_worker(ip: str, port: int = 8000):
     except Exception as e:
         logger.exception("Failed to register worker")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --------------------------- Main ---------------------------
 if __name__ == "__main__":

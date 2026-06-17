@@ -7,21 +7,22 @@ Worker для гибридной системы Yandex Cloud + локальны�
 - Обновляет статус задачи (completed/failed) и сохраняет ссылку на результат
 """
 
+
+import logging
 import os
+import signal
 import sys
 import time
-import json
-import logging
-import signal
-import requests
+
+import boto3
 import psycopg2
 import psycopg2.extras
-import boto3
+import requests
 from botocore.client import Config
 
 # ========== Конфигурация из переменных окружения ==========
-DB_DSN = os.getenv("DB_DSN")                     # postgresql://user:pass@host:6432/db?sslmode=require
-S3_BUCKET = os.getenv("S3_BUCKET")               # имя бакета
+DB_DSN = os.getenv("DB_DSN")  # postgresql://user:pass@host:6432/db?sslmode=require
+S3_BUCKET = os.getenv("S3_BUCKET")  # имя бакета
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "https://storage.yandexcloud.net")
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -34,17 +35,19 @@ GENERATION_TIMEOUT = int(os.getenv("GENERATION_TIMEOUT", "120"))  # таймау
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("worker")
 
 # Флаг для graceful shutdown
 shutdown_flag = False
 
+
 def signal_handler(sig, frame):
     global shutdown_flag
     logger.info("Received shutdown signal, exiting...")
     shutdown_flag = True
+
 
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
@@ -55,12 +58,14 @@ s3_client = boto3.client(
     endpoint_url=S3_ENDPOINT,
     aws_access_key_id=AWS_ACCESS_KEY,
     aws_secret_access_key=AWS_SECRET_KEY,
-    config=Config(region_name="ru-central1")
+    config=Config(region_name="ru-central1"),
 )
+
 
 def get_db_connection():
     """Создаёт новое соединение с PostgreSQL."""
     return psycopg2.connect(DB_DSN, cursor_factory=psycopg2.extras.DictCursor)
+
 
 def fetch_pending_task():
     """
@@ -85,14 +90,17 @@ def fetch_pending_task():
 
             task_id = row["id"]
             payload = row["payload"]
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE tasks
                 SET status = 'processing', updated_at = now()
                 WHERE id = %s
-            """, (task_id,))
+            """,
+                (task_id,),
+            )
             conn.commit()
             return task_id, payload
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to fetch pending task")
         if conn:
             conn.rollback()
@@ -101,25 +109,30 @@ def fetch_pending_task():
         if conn:
             conn.close()
 
+
 def update_task_status(task_id, status, result_url=None, error_msg=None):
     """Обновляет статус задачи в отдельном соединении."""
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE tasks
                 SET status = %s, result_url = %s, error_msg = %s, updated_at = now()
                 WHERE id = %s
-            """, (status, result_url, error_msg, task_id))
+            """,
+                (status, result_url, error_msg, task_id),
+            )
             conn.commit()
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to update status for task {task_id}")
         if conn:
             conn.rollback()
     finally:
         if conn:
             conn.close()
+
 
 def generate_image(payload):
     """
@@ -147,21 +160,29 @@ def generate_image(payload):
                     # Используем стандартный каталог вывода ComfyUI
                     image_path = os.path.join(COMFYUI_OUTPUT_DIR, image_name)
                     if not os.path.exists(image_path):
-                        raise FileNotFoundError(f"Generated file not found: {image_path}")
+                        raise FileNotFoundError(
+                            f"Generated file not found: {image_path}"
+                        )
                     logger.info(f"Generated image: {image_path}")
                     return image_path
         time.sleep(2)
 
-    raise TimeoutError(f"Generation timed out after {GENERATION_TIMEOUT}s for prompt {prompt_id}")
+    raise TimeoutError(
+        f"Generation timed out after {GENERATION_TIMEOUT}s for prompt {prompt_id}"
+    )
+
 
 def upload_to_s3(file_path, task_id):
     """Загружает файл в Yandex Object Storage и возвращает публичную ссылку."""
     key = f"results/{task_id}_{int(time.time())}.png"
-    extra_args = {"ACL": "public-read"} if "storage.yandexcloud.net" in S3_ENDPOINT else {}
+    extra_args = (
+        {"ACL": "public-read"} if "storage.yandexcloud.net" in S3_ENDPOINT else {}
+    )
     s3_client.upload_file(file_path, S3_BUCKET, key, ExtraArgs=extra_args)
     url = f"https://{S3_BUCKET}.storage.yandexcloud.net/{key}"
     logger.info(f"Uploaded to S3: {url}")
     return url
+
 
 def process_task(task_id, payload):
     """Обрабатывает одну задачу: генерация -> S3 -> обновление БД."""
@@ -176,9 +197,10 @@ def process_task(task_id, payload):
             os.unlink(image_path)
         except OSError:
             pass
-    except Exception as e:
+    except Exception:
         logger.exception(f"Task {task_id} failed")
-        update_task_status(task_id, "failed", error_msg=str(e))
+        update_task_status(task_id, "failed", error_msg=str(sys.exc_info()[1]))
+
 
 def main():
     """Главный цикл воркера."""
@@ -191,6 +213,7 @@ def main():
             continue
         process_task(task_id, payload)
     logger.info("Worker stopped.")
+
 
 if __name__ == "__main__":
     main()
