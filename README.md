@@ -1,32 +1,36 @@
-markdown
-# Hybrid Cloud GPU Rendering System (K8s Edition)
+# 🚀 Hybrid Cloud GPU Rendering System (K8s Edition)
 
-Дипломный проект по специальности **DevOps-инженер** (TMS, 2026).
+<div align="center">
 
-**Гибридная облачная система генерации изображений** с использованием
-Managed Kubernetes (Yandex Cloud) и локального вычислителя на CPU/GPU.
-Проект автоматизирует полный цикл: инфраструктура как код (Terraform),
-контейнеризация (Docker), оркестрация (Kubernetes), мониторинг (Prometheus +
-Grafana), логирование (Loki), CI/CD (GitHub Actions).
+**Дипломный проект по специальности DevOps-инженер (TMS, 2026)**
 
----
+[![Status](https://img.shields.io/badge/Status-Diploma-22c55e)]()
+[![Tech](https://img.shields.io/badge/Tech-K8s%20%2B%20Terraform%20%2B%20Docker-007ACC)]()
+[![Region](https://img.shields.io/badge/Region-Minsk%2C_BY-8B4513)]()
+[![License](https://img.shields.io/badge/License-None-yellow)]()
 
-## Оглавление
+<img src="https://github.com/trending" alt="Architecture" width="800"/>
 
-- [Архитектура](#архитектура)
-- [Поток данных](#поток-данных)
-- [Технологический стек](#технологический-стек)
-- [Структура репозитория](#структура-репозитория)
-- [Быстрый старт (полное развёртывание)](#быстрый-старт-полное-развёртывание)
-- [Настройка CI/CD (секреты GitHub Actions)](#настройка-cicd-секреты-github-actions)
-- [Команды проверки системы](#команды-проверки-системы)
-- [Мониторинг и логирование](#мониторинг-и-логирование)
-- [CI/CD пайплайн](#cicd-пайплайн)
-- [Дальнейшее развитие](#дальнейшее-развитие)
+</div>
 
 ---
 
-## Архитектура
+## 📋 Оглавление
+
+- [🏗 Архитектура](#-архитектура)
+- [🔄 Поток данных](#-поток-данных)
+- [🛠 Технологический стек](#-технологический-стек)
+- [📁 Структура репозитория](#-структура-репозитория)
+- [⚡ Быстрый старт](#-быстрый-старт-полное-развёртывание)
+- [🔐 CI/CD настройка](#-настройка-cicd-секреты-github-actions)
+- [✅ Команды проверки](#-команды-проверки-системы)
+- [📊 Мониторинг и логирование](#-мониторинг-и-логирование)
+- [🔄 CI/CD пайплайн](#-cicd-пайплан)
+- [🔮 Дальнейшее развитие](#-дальнейшее-развитие)
+
+---
+
+## 🏗 Архитектура
 
 ```text
                                   ИНТЕРНЕТ (Пользователи)
@@ -72,35 +76,43 @@ Grafana), логирование (Loki), CI/CD (GitHub Actions).
 │   │  3. Загружает готовые файлы напрямую в облачный S3-бакет                       │   │
 │   └────────────────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────────────────┘
-Поток данных
-Пользователь отправляет prompt через веб-интерфейс /ui или напрямую в API (POST /generate).
+```
 
-API создаёт запись в таблице tasks PostgreSQL со статусом pending.
+---
 
-Локальный worker опрашивает БД (атомарно захватывает одну задачу), передаёт prompt в ComfyUI, ожидает генерации изображения.
+## 🔄 Поток данных
 
-Готовое изображение загружается в Yandex Object Storage (S3).
+1. **Пользователь** отправляет `prompt` через веб-интерфейс `/ui` или API (`POST /generate`).
+2. **API** создаёт запись в таблице `tasks` PostgreSQL со статусом `pending`.
+3. **Локальный worker** опрашивает БД (атомарно захватывает одну задачу), передаёт `prompt` в ComfyUI, ожидает генерации.
+4. **Готовое изображение** загружается в Yandex Object Storage (S3).
+5. **Worker** обновляет статус задачи в БД (`completed` → ссылка на файл).
+6. **Пользователь** проверяет статус (`GET /status/{id}`) и получает `result_url`.
 
-Worker обновляет статус задачи в БД (completed → ссылка на файл).
+> Все запросы метрикуются (Prometheus) и логируются (Loki). Дашборды доступны в Grafana.
 
-Пользователь может повторно запросить статус (GET /status/{id}) и получить result_url.
+---
 
-Все запросы к API метрикуются (Prometheus) и логируются (Loki). Дашборды доступны в Grafana.
+## 🛠 Технологический стек
 
-Технологический стек
-Категория	Инструменты	Назначение
-IaC	Terraform, Yandex Cloud	Создание облачной инфраструктуры
-Оркестрация	Managed Kubernetes, Helm	Запуск и масштабирование API
-Контейнеризация	Docker, Docker Compose	Упаковка API и воркера
-API	FastAPI (Python 3.10)	Приём промптов, работа с БД
-База данных	Managed PostgreSQL	Хранение задач и статусов
-Хранилище	Yandex Object Storage (S3)	Хранение сгенерированных изображений
-Мониторинг	Prometheus, Grafana	Метрики API, визуализация
-Логирование	Loki, Promtail, Grafana	Сбор и просмотр логов
-CI/CD	GitHub Actions	Автотесты, сборка, деплой
-Безопасность	Kubernetes Secrets	Чувствительные переменные окружения
-Структура репозитория
-text
+| Категория | Инструменты | Назначение |
+|-----------|-------------|------------|
+| **IaC** | Terraform, Yandex Cloud | Создание облачной инфраструктуры |
+| **Оркестрация** | Managed Kubernetes, Helm | Запуск и масштабирование API |
+| **Контейнеризация** | Docker, Docker Compose | Упаковка API и воркера |
+| **API** | FastAPI (Python 3.10) | Приём промптов, работа с БД |
+| **База данных** | Managed PostgreSQL | Хранение задач и статусов |
+| **Хранилище** | Yandex Object Storage (S3) | Хранение сгенерированных изображений |
+| **Мониторинг** | Prometheus, Grafana | Метрики API, визуализация |
+| **Логирование** | Loki, Promtail, Grafana | Сбор и просмотр логов |
+| **CI/CD** | GitHub Actions | Автотесты, сборка, деплой |
+| **Безопасность** | Kubernetes Secrets | Чувствительные переменные окружения |
+
+---
+
+## 📁 Структура репозитория
+
+```bash
 .
 ├── app/
 │   └── worker_core.py                 # Логика воркера (БД → ComfyUI → S3)
@@ -114,7 +126,7 @@ text
 │   └── entrypoint.sh                  # Точка входа контейнера воркера
 ├── docker-compose.yml                 # Локальный запуск worker'а
 ├── full-deploy.sh                     # Полный деплой с нуля (Terraform + все компоненты)
-├── monitoring-deploy.sh               # Установка только Kubernetes-компонентов и мониторинга
+├── monitoring-deploy.sh               # Установка только K8s-компонентов и мониторинга
 ├── helm/
 │   └── hybrid-api/
 │       ├── Chart.yaml                 # Метаданные Helm-чарта
@@ -144,57 +156,62 @@ text
 ├── .github/workflows/
 │   └── deploy.yml                     # CI/CD пайплайн (GitHub Actions)
 └── README.md                          # ← этот документ
-Примечание: Файлы, перечисленные в .gitignore (*.tfstate, *.tfvars, *.json, *.env, сгенерированный values.yaml), не хранятся в репозитории и поэтому не показаны в дереве.
+```
 
-Основные файлы:
+> **Основные файлы:**
+> - `full-deploy.sh` — запускает всё: Terraform, сборку, деплой API и воркера.
+> - `monitoring-deploy.sh` — устанавливает только K8s-компоненты и мониторинг.
+> - `app/worker_core.py` — основной цикл обработки задач.
+> - `Docker/api/api_server.py` — FastAPI-приложение с эндпоинтами и веб-интерфейсом.
 
-full-deploy.sh – запускает вообще всё: Terraform, сборку образа, установку Ingress, мониторинга, API и воркера. После выполнения система полностью готова.
+---
 
-monitoring-deploy.sh – устанавливает только Kubernetes-компоненты (Ingress, Prometheus, Grafana, Loki, API). Используется при повторных деплоях или после terraform apply.
+## ⚡ Быстрый старт (полное развёртывание)
 
-app/worker_core.py – основной цикл обработки задач.
+> ⚠️ **Важно:** перед первым запуском заполните `terraform/terraform.tfvars` своими данными (облачные ID, пароли, токены). Файл содержит секреты и не должен коммититься в Git.
 
-Docker/api/api_server.py – FastAPI-приложение с эндпоинтами и веб-интерфейсом.
-
-helm/hybrid-api/ – Helm-чарт для развёртывания API в Kubernetes.
-
-terraform/ – вся облачная инфраструктура как код.
-
-monitoring-dashboards/fastapi-metrics.json – JSON-дашборд для Grafana (автоматически импортируется при деплое).
-
-Быстрый старт (полное развёртывание)
-Важно: перед первым запуском заполните terraform/terraform.tfvars своими данными (облачные ID, пароли, токены). Файл содержит секреты и не должен коммититься в Git.
-
-bash
+```bash
 cd ~/Diplom_TMS
 ./full-deploy.sh
-После завершения скрипт выведет список секретов для GitHub Actions и URL-адреса:
+```
 
-API: http://api.<INGRESS_IP>.nip.io/health
+После завершения скрипт выведет:
 
-Grafana: http://grafana.<INGRESS_IP>.nip.io (логин: admin, пароль: admin123)
+| Сервис | URL | Логин/Пароль |
+|--------|-----|--------------|
+| **API** | `http://api.<INGRESS_IP>.nip.io/health` | — |
+| **Grafana** | `http://grafana.<INGRESS_IP>.nip.io` | `admin` / `admin123` |
+| **Веб-интерфейс** | `http://api.<INGRESS_IP>.nip.io/ui` | — |
 
-Веб-интерфейс: http://api.<INGRESS_IP>.nip.io/ui
+---
 
-Настройка CI/CD (секреты GitHub Actions)
-Для работы автоматического деплоя при пуше в ветку main необходимо добавить следующие секреты в Settings → Secrets → Actions репозитория:
+## 🔐 Настройка CI/CD (секреты GitHub Actions)
 
-Секрет	Как получить
-YC_OAUTH_TOKEN	OAuth‑токен Яндекса. Можно взять здесь.
-YC_CLOUD_ID	ID облака из terraform.tfvars или yc config list
-YC_FOLDER_ID	ID каталога из terraform.tfvars или yc config list
-YC_REGISTRY_ID	yc container registry list – ID Container Registry
-YC_CLUSTER_ID	terraform -chdir=terraform output -raw k8s_cluster_id
-INGRESS_IP	kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-После пересоздания инфраструктуры (terraform destroy && terraform apply) достаточно обновить YC_CLUSTER_ID и INGRESS_IP. Остальные секреты не меняются.
+Для автоматического деплоя при пуше в `main` добавьте секреты в **Settings → Secrets → Actions**:
 
-Команды проверки системы
-Проверка подов и Ingress
-bash
+| Секрет | Как получить |
+|--------|--------------|
+| `YC_OAUTH_TOKEN` | OAuth-токен Яндекса: [получить здесь](https://cloud.yandex.ru/ru/docs/iam/concepts/authorization/oauth-token) |
+| `YC_CLOUD_ID` | `terraform.tfvars` или `yc config list` |
+| `YC_FOLDER_ID` | `terraform.tfvars` или `yc config list` |
+| `YC_REGISTRY_ID` | `yc container registry list` — ID Container Registry |
+| `YC_CLUSTER_ID` | `terraform -chdir=terraform output -raw k8s_cluster_id` |
+| `INGRESS_IP` | `kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'` |
+
+> После `terraform destroy && terraform apply` обновите только `YC_CLUSTER_ID` и `INGRESS_IP`.
+
+---
+
+## ✅ Команды проверки системы
+
+### Поды и Ingress
+```bash
 kubectl get pods -A
 kubectl get ingress -A
-Проверка таблицы задач (PostgreSQL)
-bash
+```
+
+### Таблица задач (PostgreSQL)
+```bash
 kubectl exec -it deployment/hybrid-api-api -- python3 -c "
 import psycopg2, os
 conn = psycopg2.connect(os.getenv('DB_DSN'))
@@ -204,90 +221,97 @@ cols = ['ID','STATUS','RESULT_URL','ERROR_MSG','CREATED_AT']
 print(' | '.join(cols))
 print('-' * 100)
 for row in cur.fetchall():
-    print(f'{row[0]:<4} | {row[1]:<10} | {row[2] or \"\":<40} | {row[3] or \"\":<20} | {row[4]}')
+    print(f'{row:<4} | {row:<10} | {row or \"\":<40} | {row or \"\":<20} | {row}')
 conn.close()
 "
-Пример вывода:
+```
+
+**Пример вывода:**
+ID | STATUS | RESULT_URL | ERROR_MSG | CREATED_AT
+
+1 | completed | https://...results/1_123456.png | | 2026-06-15 10:15:00
+2 | failed | | Timeout... | 2026-06-15 10:20:00
 
 text
-ID | STATUS     | RESULT_URL                               | ERROR_MSG            | CREATED_AT
---------------------------------------------------------------------------------------------------------
-1  | completed  | https://...results/1_123456.png         |                      | 2026-06-15 10:15:00
-2  | failed     |                                          | Timeout...           | 2026-06-15 10:20:00
-Логи API
-bash
+
+### Логи
+```bash
+# API
 kubectl logs deployment/hybrid-api-api --tail 20
-Логи воркера
-bash
+
+# Worker
 docker compose logs worker --tail 20
-Полный интеграционный тест
-bash
-INGRESS_IP=$(kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-# healthcheck
+```
+
+### Интеграционный тест
+```bash
+INGRESS_IP=$(kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress.ip}')
+
+# Healthcheck
 curl -s http://api.$INGRESS_IP.nip.io/health
-# создать задачу
+
+# Создать задачу
 curl -X POST http://api.$INGRESS_IP.nip.io/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt":"a cat","steps":5}'
-# проверить статус (подставить task_id)
+
+# Проверить статус
 curl -s http://api.$INGRESS_IP.nip.io/status/1
-Мониторинг и логирование
-Единый дашборд мониторинга
-После развёртывания в Grafana автоматически импортируется дашборд «Hybrid GPU – Full Monitoring», объединяющий все ключевые метрики и логи системы.
+```
 
-Что отображается на дашборде:
+---
 
-Панель	Описание	Единицы
-Requests per Second	Частота запросов по handler'ам и методам	reqps
-Error Rate (5xx)	Процент ошибок сервера (коды 500–599)	%
-Average Response Time	Среднее время ответа для каждого handler'а	секунды
-Total Requests	Общее количество запросов по handler'ам	абсолютное число
-Response Status Codes	Распределение запросов по HTTP-статусам (200, 404, 422, 500 и др.)	число
-CPU Usage per Node	Загрузка процессора на каждой ноде кластера	% (0–100)
-Memory Usage per Node	Использование оперативной памяти на нодах	% (0–100)
-Running Pods	Количество подов в статусе Running	абсолютное число
-API Logs	Логи FastAPI (поиск ошибок, просмотр запросов)	текст
-Источники данных
-Метрики приложения (FastAPI) собираются Prometheus через библиотеку prometheus_fastapi_instrumentator (эндпоинт /metrics).
+## 📊 Мониторинг и логирование
 
-Инфраструктурные метрики (CPU, память, поды) собираются node-exporter и kube-state-metrics, которые автоматически устанавливаются вместе с kube-prometheus-stack.
+### Единый дашборд «Hybrid GPU – Full Monitoring»
 
-Логи собираются Promtail, хранятся в Loki и отображаются в Grafana.
+| Панель | Описание | Единицы |
+|--------|----------|---------|
+| **Requests per Second** | Частота запросов по handler'ам | reqps |
+| **Error Rate (5xx)** | Процент ошибок сервера (500–599) | % |
+| **Average Response Time** | Среднее время ответа по handler'ам | секунды |
+| **Total Requests** | Общее количество запросов | абсолютное число |
+| **Response Status Codes** | Распределение по HTTP-статусам | число |
+| **CPU Usage per Node** | Загрузка CPU на каждой ноде | % (0–100) |
+| **Memory Usage per Node** | Использование памяти на нодах | % (0–100) |
+| **Running Pods** | Количество подов в статусе Running | абсолютное число |
+| **API Logs** | Логи FastAPI (поиск ошибок) | текст |
 
-Дополнительные дашборды
-В Grafana также доступны встроенные дашборды Kubernetes (устанавливаются автоматически):
+### Как это работает
+1. **Prometheus** опрашивает `/metrics` FastAPI и другие цели каждые 30 сек.
+2. **Promtail** собирает логи со всех подов → отправляет в **Loki**.
+3. **Grafana** визуализирует метрики и логи в едином интерфейсе.
 
-Kubernetes / Compute Resources / Cluster – общая утилизация ресурсов кластера.
+### Дополнительные дашборды в Grafana
+- `Kubernetes / Compute Resources / Cluster` — утилизация ресурсов кластера
+- `Kubernetes / Compute Resources / Pod` — CPU и память каждым подом
+- `Node Exporter / Nodes` — детальные метрики нод (диски, сеть)
 
-Kubernetes / Compute Resources / Pod – потребление CPU и памяти каждым подом.
+---
 
-Node Exporter / Nodes – детальные метрики нод (диски, сеть, нагрузка).
+## 🔄 CI/CD пайплайн
 
-Эти дашборды можно найти в разделе Dashboards → Manage.
+При пуше в `main` (и изменении `Docker/api/**`, `helm/**`, `tests/**`) запускается:
 
-Как это работает
-Prometheus опрашивает /metrics FastAPI и другие цели (node-exporter, kube-state-metrics) каждые 30 секунд.
+1. **Lint & Test** — `flake8`, `black`, `isort` + `pytest`
+2. **Build & Deploy** — сборка Docker-образа → пуш в Yandex Container Registry → обновление Helm-релиза
 
-Promtail собирает логи со всех подов и отправляет их в Loki.
+> Workflow генерирует `kubeconfig` на лету через `yc` — ручное обновление не требуется.
 
-Grafana визуализирует метрики и логи, предоставляя единый интерфейс для наблюдения за системой.
+---
 
-CI/CD пайплайн
-При каждом пуше в ветку main (и изменении файлов в Docker/api/**, helm/**, tests/**) запускается GitHub Actions workflow:
+## 🔮 Дальнейшее развитие
 
-Lint & Test – проверка кода линтерами (flake8, black, isort) и запуск pytest.
+- 🔄 **GitOps (ArgoCD)** — автоматическая синхронизация кластера с Git
+- 🎮 **GPU-ускорение** — переход на ROCm-образ (RX 9070 XT)
+- 🔒 **Шифрение секретов** — External Secrets Operator
+- 📈 **Автомасштабирование** — HorizontalPodAutoscaler для API + несколько воркеров
 
-Build & Deploy – сборка Docker-образа с тегом коммита, пуш в Yandex Container Registry, обновление Helm-релиза в Kubernetes.
+---
 
-Workflow не требует ручного обновления kubeconfig – он генерируется на лету с помощью yc.
+<div align="center">
 
-Дальнейшее развитие
-GitOps (ArgoCD) – автоматическая синхронизация кластера с Git.
+**Проект выполнен в рамках дипломной работы по специальности «DevOps-инженер» (TMS, 2026)**  
+📍 Minsk, BY
 
-GPU-ускорение – переход на ROCm-образ при стабильной поддержке RX 9070 XT.
-
-Шифрование секретов – интеграция с External Secrets Operator.
-
-Автомасштабирование – HorizontalPodAutoscaler для API и несколько воркеров.
-
-*Проект выполнен в рамках дипломной работы по специальности «DevOps-инженер» (TMS, 2026).*
+</div>
