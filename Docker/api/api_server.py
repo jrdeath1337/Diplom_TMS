@@ -73,7 +73,7 @@ def ui():
     <body>
         <h2>Generate Image</h2>
         <label>Prompt:</label><br>
-        <textarea id="prompt" rows="3">a cat, high quality</textarea><br>
+        <textarea id="prompt" rows="3">a dog</textarea><br>
         <label>Negative prompt:</label><br>
         <input id="negative" value="bad quality, blurry"><br>
         <label>Model:</label><br>
