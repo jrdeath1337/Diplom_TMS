@@ -93,4 +93,4 @@ jobs:
             --set service.port=8888 \
             --set ingress.enabled=true \
             --set ingress.className=nginx \
-            --set ingress.host=api.${{ secrets.INGRESS_IP }}.nip.io
+            --set ingress.host="api.${{ secrets.INGRESS_IP }}.nip.io"
