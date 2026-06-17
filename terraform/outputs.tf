@@ -33,3 +33,14 @@ output "kubeconfig_command" {
   value = "yc managed-kubernetes cluster get-credentials ${yandex_kubernetes_cluster.main.id} --external"
 }
 
+output "yc_cloud_id" {
+  value = var.yc_cloud_id
+}
+
+output "yc_folder_id" {
+  value = var.yc_folder_id
+}
+
+output "k8s_cluster_id" {
+  value = yandex_kubernetes_cluster.main.id
+}

@@ -1,224 +1,319 @@
 # Hybrid Cloud GPU Rendering System (K8s Edition)
 
-Дипломный проект: автоматизация гибридной облачной инфраструктуры для генерации изображений с использованием Managed Kubernetes (Yandex Cloud) и локального GPU AMD (ROCm).
+Дипломный проект по специальности **DevOps-инженер** (TMS, 2026).
 
-**Статус:** учебный прототип. Отдельные аспекты безопасности и отказоустойчивости упрощены для демонстрации концепции.
+**Гибридная облачная система генерации изображений** с использованием
+Managed Kubernetes (Yandex Cloud) и локального вычислителя на CPU/GPU.
+Проект автоматизирует полный цикл: инфраструктура как код (Terraform),
+контейнеризация (Docker), оркестрация (Kubernetes), мониторинг (Prometheus +
+Grafana), логирование (Loki), CI/CD (GitHub Actions).
 
-## Архитектура
+---
 
-Система состоит из двух основных контуров:
+## Оглавление
 
-1. **Облачный контур (Yandex Cloud)**
-   - **API-сервис** (FastAPI) в Managed Kubernetes принимает запросы пользователей.
-   - **База данных** Managed PostgreSQL хранит очередь задач и статусы.
-   - **Хранилище** Yandex Object Storage (S3) для готовых изображений.
-   - **Мониторинг** Prometheus + Grafana (сбор метрик API).
-   - **Логирование** Loki + Grafana
-   - **Ingress-контроллер** NGINX для доступа к API и Grafana.
+- [Архитектура](#архитектура)
+- [Поток данных](#поток-данных)
+- [Технологический стек](#технологический-стек)
+- [Структура репозитория](#структура-репозитория)
+- [Быстрый старт (полное развёртывание)](#быстрый-старт-полное-развёртывание)
+- [Настройка CI/CD (секреты GitHub Actions)](#настройка-cicd-секреты-github-actions)
+- [Команды проверки системы](#команды-проверки-системы)
+- [Мониторинг и логирование](#мониторинг-и-логирование)
+- [CI/CD пайплайн](#cicd-пайплайн)
+- [Дальнейшее развитие](#дальнейшее-развитие)
 
-2. **Локальный контур (On-premise)**
-   - **Worker** на Python + **ComfyUI** (в Docker-контейнере) на машине с GPU AMD ROCm (RX 9070 XT).
-   - Worker забирает задачи из облачной БД, отправляет на генерацию в ComfyUI, результат загружает в S3, обновляет статус.
-   - Для связи используется публичный IP (в перспективе WireGuard-туннель).
+---
 
-![Архитектура](docs/architecture.png) *(если есть схема)*
 
-Поток данных:
-1. `POST /generate` → API создаёт задачу в PostgreSQL (статус `pending`).
-2. Worker опрашивает БД → переводит задачу в `processing`.
-3. Worker отправляет workflow в ComfyUI → ожидает генерации → получает файл.
-4. Файл загружается в S3, статус обновляется до `completed` (или `failed`), ссылка сохраняется.
-5. Клиент через `GET /status/{id}` получает результат.
+                                  ИНТЕРНЕТ (Пользователи)
+                                             │
+                                             ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ CLOUD: Yandex Managed Kubernetes                                                       │
+│                                                                                        │
+│   ┌───────────────────────────────┐                  ┌───────────────────────────────┐ │
+│   │ Ingress Controller (NGINX)    │                  │ Monitoring Stack              │ │
+│   │ URL: ://yourdomain.com        │                  │ (Prometheus + Grafana + Loki) │ │
+│   └───────────────┬───────────────┘                  └───────────────────────────────┘ │
+│                   │                                                                    │
+│                   ▼                                                                    │
+│   ┌───────────────────────────────┐                                                    │
+│   │ API Service (FastAPI)         │                                                    │
+│   │ [ Реплика 1 ]   [ Реплика 2 ] │                                                    │
+│   └───────────────┬───────────────┘                                                    │
+│                   │                                                                    │
+│                   ▼                                                                    │
+│   ┌───────────────────────────────┐                                                    │
+│   │ Managed PostgreSQL            │◀──────────────────────────────────┐                │
+│   │ (Хранение данных и задач)     │                                   │                │
+│   └───────────────┬───────────────┘                                   │                │
+│                   │                                                   │                │
+│                   ▼                                                   │                │
+│   ┌───────────────────────────────┐                                   │                │
+│   │ Object Storage (S3)           │◀──────────────────┐               │                │
+│   │ (Хранилище изображений)       │                   │               │                │
+│   └───────────────────────────────┘                   │               │                │
+└───────────────────────────────────────────────────────┼───────────────┼────────────────┘
+                                                        │               │
+                                              [S3 Изображения]     [БД Задачи]
+                                                        │               │
+┌───────────────────────────────────────────────────────┼───────────────┼────────────────┐
+│ EDGE: Локальный узел (Docker Compose)                 │               │                │
+│                                                       │               │                │
+│   ┌───────────────────────────────────────────────────┴───────────────┴────────────┐   │
+│   │ Worker (Python + ComfyUI + ROCm)                                               │   │
+│   │                                                                                │   │
+│   │  1. Забирает новые задачи из PostgreSQL через "SELECT FOR UPDATE"              │   │
+│   │  2. Генерирует изображения на GPU AMD (через стек ROCm)                        │   │
+│   │  3. Загружает готовые файлы напрямую в облачный S3-бакет                       │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+---
+
+## Поток данных
+
+1. **Пользователь** отправляет prompt через веб-интерфейс `/ui` или напрямую в
+   API (`POST /generate`).
+2. **API** создаёт запись в таблице `tasks` PostgreSQL со статусом `pending`.
+3. **Локальный worker** опрашивает БД (атомарно захватывает одну задачу),
+   передаёт prompt в ComfyUI, ожидает генерации изображения.
+4. Готовое изображение загружается в **Yandex Object Storage** (S3).
+5. **Worker** обновляет статус задачи в БД (`completed` → ссылка на файл).
+6. **Пользователь** может повторно запросить статус (`GET /status/{id}`) и
+   получить `result_url`.
+7. Все запросы к API **метрикуются** (Prometheus) и **логируются** (Loki).
+   Дашборды доступны в Grafana.
+
+---
 
 ## Технологический стек
 
-| Уровень          | Технологии                                         |
-| ---------------- | -------------------------------------------------- |
-| Инфраструктура   | Terraform (Yandex Cloud)                           |
-| Оркестрация      | Yandex Managed Kubernetes, Helm                    |
-| Контейнеризация  | Docker, Docker Compose                             |
-| API              | FastAPI (Python)                                   |
-| База данных      | Yandex Managed PostgreSQL                          |
-| Хранилище        | Yandex Object Storage (S3)                         |
-| Мониторинг       | Prometheus Operator, Grafana, Loki                 |
-| CI/CD            | GitHub Actions (только для API – см. ниже)         |
+| Категория          | Инструменты                          | Назначение                             |
+|--------------------|--------------------------------------|----------------------------------------|
+| IaC                | Terraform, Yandex Cloud              | Создание облачной инфраструктуры       |
+| Оркестрация        | Managed Kubernetes, Helm             | Запуск и масштабирование API           |
+| Контейнеризация    | Docker, Docker Compose               | Упаковка API и воркера                 |
+| API                | FastAPI (Python 3.10)                | Приём промптов, работа с БД            |
+| База данных        | Managed PostgreSQL                   | Хранение задач и статусов              |
+| Хранилище          | Yandex Object Storage (S3)           | Хранение сгенерированных изображений   |
+| Мониторинг         | Prometheus, Grafana                  | Метрики API, визуализация              |
+| Логирование        | Loki, Promtail, Grafana              | Сбор и просмотр логов                  |
+| CI/CD              | GitHub Actions                       | Автотесты, сборка, деплой              |
+| Безопасность       | Kubernetes Secrets                   | Чувствительные переменные окружения    |
+
+---
 
 ## Структура репозитория
+
 .
-├── app/ # Исходный код воркера
-│ ├── worker_core.py
-│ └── README.me
-├── docker/ # Сборка контейнеров
-│ ├── api/ # API-сервер
-│ │ ├── Dockerfile
-│ │ ├── api_server.py
-│ │ └── requirements.txt
-│ ├── worker/ # Worker (ComfyUI + воркер)
-│ │ └── Dockerfile
-│ └── entrypoint.sh # Точка входа для контейнера worker
+├── app/
+│ └── worker_core.py # Логика воркера (БД → ComfyUI → S3)
+├── Docker/
+│ ├── api/
+│ │ ├── api_server.py # FastAPI-приложение
+│ │ ├── Dockerfile # Сборка образа API
+│ │ └── requirements.txt # Python-зависимости API
+│ ├── worker/
+│ │ └── Dockerfile # Сборка образа воркера (ComfyUI, ROCm/CPU)
+│ └── entrypoint.sh # Точка входа контейнера воркера
+├── docker-compose.yml # Локальный запуск worker'а
+├── full-deploy.sh # Полный деплой с нуля (Terraform + все компоненты)
+├── monitoring-deploy.sh # Установка только Kubernetes-компонентов и мониторинга
 ├── helm/
-│ └── hybrid-api/ # Helm-чарт для API
-│ ├── Chart.yaml
-│ ├── templates/
-│ │ ├── deployment.yaml
-│ │ ├── ingress.yaml
-│ │ ├── servicemonitor.yaml
-│ │ └── service.yaml
-│ └── values.tftpl # Шаблон values (заполняется Terraform)
-├── terraform/ # Инфраструктура Yandex Cloud
-│ ├── *.tf # Основные файлы Terraform
-│ ├── outputs.tf
-│ ├── variables.tf
-│ ├── terraform.tfvars # (не в репозитории – хранит секреты)
-│ └── .terraform.lock.hcl
-├── monitoring-dashboards/ # Дашборд Grafana
-│ └── fastapi-metrics.json
-├── docker-compose.yml # Локальный запуск (для разработки/воркера)
-├── deploy.sh # Скрипт деплоя API + мониторинга
-├── full-deploy.sh # Полный деплой с нуля (Terraform + приложения)
-└── README.md
+│ └── hybrid-api/
+│ ├── Chart.yaml # Метаданные Helm-чарта
+│ ├── values.tftpl # Шаблон values.yaml (заполняется Terraform)
+│ └── templates/
+│ ├── deployment.yaml # Deployment API
+│ ├── service.yaml # Service
+│ ├── ingress.yaml # Ingress
+│ └── servicemonitor.yaml # ServiceMonitor для Prometheus
+├── monitoring-dashboards/
+│ └── fastapi-metrics.json # Дашборд Grafana (импортируется автоматически)
+├── terraform/ # Инфраструктура как код
+│ ├── provider.tf # Провайдеры (Yandex, Kubernetes, Helm, ...)
+│ ├── variables.tf # Объявление входных переменных
+│ ├── network.tf # VPC, подсеть, security group
+│ ├── postgresql.tf # Managed PostgreSQL, БД, пользователь
+│ ├── storage.tf # Object Storage (S3)
+│ ├── iam.tf # Сервисный аккаунт, ключи доступа
+│ ├── container-registry.tf # Container Registry
+│ ├── k8s.tf # Managed Kubernetes, группа узлов
+│ ├── env.tf # Генерация cpu-worker.env и values.yaml
+│ ├── outputs.tf # Выходные переменные
+│ └── k8s-secrets.tf # Kubernetes Secret (опционально)
+├── tests/
+│ ├── test_api.py # Тесты FastAPI
+│ └── test_worker.py # Тесты воркера
+├── .github/workflows/
+│ └── deploy.yml # CI/CD пайплайн (GitHub Actions)
+└── README.md # ← этот документ
 
-text
+**Примечание:** Файлы, перечисленные в `.gitignore` (`*.tfstate`, `*.tfvars`,
+`*.json`, `*.env`, сгенерированный `values.yaml`), не хранятся в репозитории
+и поэтому не показаны в дереве.
 
-**Примечание:** Файлы, содержащие секреты (`terraform.tfvars`, `s3-key.json`, `cpu-worker.env`, `outputs.json`, `terraform.tfstate*`) и их резервные копии **исключены** из репозитория (см. `.gitignore`).
+**Основные файлы:**
+- **`full-deploy.sh`** – запускает вообще всё: Terraform, сборку образа,
+  установку Ingress, мониторинга, API и воркера. После выполнения система
+  полностью готова.
+- **`monitoring-deploy.sh`** – устанавливает только Kubernetes-компоненты (Ingress,
+  Prometheus, Grafana, Loki, API). Используется при повторных деплоях или после
+  `terraform apply`.
+- **`app/worker_core.py`** – основной цикл обработки задач.
+- **`Docker/api/api_server.py`** – FastAPI-приложение с эндпоинтами и
+  веб-интерфейсом.
+- **`helm/hybrid-api/`** – Helm-чарт для развёртывания API в Kubernetes.
+- **`terraform/`** – вся облачная инфраструктура как код.
+- **`monitoring-dashboards/fastapi-metrics.json`** – JSON-дашборд для Grafana
+  (автоматически импортируется при деплое).
+
+---
 
 ## Быстрый старт (полное развёртывание)
 
-Все команды выполняются на машине с доступом к Yandex Cloud и настроенным `yc` CLI.
+> **Важно:** перед первым запуском заполните `terraform/terraform.tfvars`
+> своими данными (облачные ID, пароли, токены). Файл содержит секреты и не
+> должен коммититься в Git.
 
-1. **Клонируйте репозиторий**:
-   ```bash
-   git clone <url>
-   cd Diplom_TMS
-Настройте переменные Terraform:
-Создайте в папке terraform/ файл terraform.tfvars:
-
-hcl
-yc_cloud_id        = "<ваш cloud-id>"
-yc_folder_id       = "<ваш folder-id>"
-yc_token           = "<ваш OAuth-токен>"
-postgres_password  = "<надёжный пароль>"
-Запустите полный деплой:
-
-bash
+cd ~/Diplom_TMS
 ./full-deploy.sh
-Скрипт последовательно выполнит:
 
-terraform apply – создание облачной инфраструктуры.
+После завершения скрипт выведет список секретов для GitHub Actions и URL-адреса
 
-Подключение к кластеру Kubernetes.
+API: http://api.<INGRESS_IP>.nip.io/health
 
-Сборку и публикацию образа API в Container Registry.
+Grafana: http://grafana.<INGRESS_IP>.nip.io (admin / admin123)
 
-Установку NGINX Ingress, Prometheus, Grafana, Loki.
+Веб-интерфейс: http://api.<INGRESS_IP>.nip.io/ui
 
-Деплой API через Helm.
+## Настройка CI/CD (секреты GitHub Actions)
+Для работы автоматического деплоя при пуше в main необходимо добавить
+следующие секреты в Settings → Secrets → Actions репозитория:
 
-Запуск локального worker (если настроен Docker Compose).
+Секрет	Как получить
+YC_OAUTH_TOKEN	OAuth‑токен Яндекса. Можно взять здесь
+YC_CLOUD_ID	ID облака из terraform.tfvars или yc config list
+YC_FOLDER_ID	ID каталога из terraform.tfvars или yc config list
+YC_REGISTRY_ID	yc container registry list – ID Container Registry
+YC_CLUSTER_ID	terraform -chdir=terraform output -raw k8s_cluster_id
+INGRESS_IP	kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+После пересоздания инфраструктуры (terraform destroy && terraform apply)
+достаточно обновить YC_CLUSTER_ID и INGRESS_IP. Остальные секреты не
+меняются.
 
-После завершения в консоли отобразятся URL:
+## Команды проверки системы
+Проверка подов и Ingress
 
-API: http://api.<внешний-IP>.nip.io/health
+kubectl get pods -A
+kubectl get ingress -A
 
-Grafana: http://grafana.<внешний-IP>.nip.io (логин admin, пароль admin123)
+Проверка таблицы задач (PostgreSQL)
 
-Проверка:
+kubectl exec -it deployment/hybrid-api-api -- python3 -c "
+import psycopg2, os
+conn = psycopg2.connect(os.getenv('DB_DSN'))
+cur = conn.cursor()
+cur.execute('SELECT id, status, result_url, error_msg, created_at FROM tasks ORDER BY id')
+cols = ['ID','STATUS','RESULT_URL','ERROR_MSG','CREATED_AT']
+print(' | '.join(cols))
+print('-' * 100)
+for row in cur.fetchall():
+    print(f'{row[0]:<4} | {row[1]:<10} | {row[2] or \"\":<40} | {row[3] or \"\":<20} | {row[4]}')
+conn.close()
+"
+Пример вывода:
 
-Откройте API: curl http://api.<IP>.nip.io/health
+ID | STATUS     | RESULT_URL                               | ERROR_MSG            | CREATED_AT
+--------------------------------------------------------------------------------------------------------
+1  | completed  | https://...results/1_123456.png         |                      | 2026-06-15 10:15:00
+2  | failed     |                                          | Timeout...           | 2026-06-15 10:20:00
 
-Откройте Grafana, перейдите на дашборд «Hybrid GPU API Metrics».
+Логи API
 
-Для проверки worker’а отправьте запрос на генерацию:
+kubectl logs deployment/hybrid-api-api --tail 20
 
-bash
-curl -X POST http://api.<IP>.nip.io/generate \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"a cat, high quality", "steps":3}'
-Затем проверьте статус по полученному task_id.
+Логи воркера
 
-Ручное развёртывание (по шагам)
-Если вы предпочитаете контролировать процесс:
+docker compose logs worker --tail 20
 
-Terraform:
+Полный интеграционный тест
 
-bash
-cd terraform
-terraform init
-terraform apply
-cd ..
-Подключение к кластеру:
+INGRESS_IP=$(kubectl get svc -n nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+# healthcheck
+curl -s http://api.$INGRESS_IP.nip.io/health
+# создать задачу
+curl -X POST http://api.$INGRESS_IP.nip.io/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"a cat","steps":5}'
+# проверить статус (подставить task_id)
+curl -s http://api.$INGRESS_IP.nip.io/status/1
 
-bash
-yc managed-kubernetes cluster get-credentials <cluster-id> --external --force
-Сборка и пуш образа API:
+## Мониторинг и логирование
+Единый дашборд мониторинга
+После развёртывания в Grafana автоматически импортируется дашборд «Hybrid GPU – Full Monitoring», объединяющий все ключевые метрики и логи системы.
 
-bash
-REGISTRY_ID=$(yc container registry list --format json | jq -r '.[0].id')
-docker login --username iam --password-stdin cr.yandex <<< $(yc iam create-token)
-docker build -t cr.yandex/$REGISTRY_ID/hybrid-api:v0.1 ./docker/api
-docker push cr.yandex/$REGISTRY_ID/hybrid-api:v0.1
-Деплой:
+Что отображается на дашборде
+Панель	Описание	Единицы
+Requests per Second	Частота запросов по handler'ам и методам	reqps
+Error Rate (5xx)	Процент ошибок сервера (коды 500–599)	%
+Average Response Time	Среднее время ответа для каждого handler'а	секунды
+Total Requests	Общее количество запросов по handler'ам	абсолютное число
+Response Status Codes	Распределение запросов по HTTP-статусам (200, 404, 422, 500 и др.)	число
+CPU Usage per Node	Загрузка процессора на каждой ноде кластера	% (0–100)
+Memory Usage per Node	Использование оперативной памяти на нодах	% (0–100)
+Running Pods	Количество подов в статусе Running	абсолютное число
+API Logs	Логи FastAPI (поиск ошибок, просмотр запросов)	текст
 
-bash
-./deploy.sh
-Worker (на локальной машине с GPU):
+Источники данных
+Метрики приложения (FastAPI) собираются Prometheus через библиотеку prometheus_fastapi_instrumentator (эндпоинт /metrics).
 
-Убедитесь, что файл cpu-worker.env (сгенерированный Terraform) лежит в корне проекта.
+Инфраструктурные метрики (CPU, память, поды) собираются node-exporter и kube-state-metrics, которые автоматически устанавливаются вместе с kube-prometheus-stack.
 
-Выполните docker compose up -d worker.
+Логи собираются Promtail, хранятся в Loki и отображаются в Grafana.
 
-Мониторинг
-Grafana доступна по адресу из вывода deploy.sh.
+Дополнительные дашборды
+В Grafana также доступны встроенные дашборды Kubernetes (устанавливаются автоматически):
 
-Встроенный дашборд «Hybrid GPU API Metrics» показывает:
+Kubernetes / Compute Resources / Cluster – общая утилизация ресурсов кластера.
 
-RPS (запросы в секунду),
+Kubernetes / Compute Resources / Pod – потребление CPU и памяти каждым подом.
 
-Доля ошибок 5xx,
+Node Exporter / Nodes – детальные метрики нод (диски, сеть, нагрузка).
 
-Среднее время ответа,
+Эти дашборды можно найти в разделе Dashboards → Manage.
 
-Общее количество запросов.
+Как это работает
+Prometheus опрашивает /metrics FastAPI и другие цели (node-exporter, kube-state-metrics) каждые 30 секунд.
 
-Метрики собираются Prometheus Operator через ServiceMonitor (настроен автоматически).
+Promtail собирает логи со всех подов и отправляет их в Loki.
 
-Loki собирает логи всех подов (доступен в Grafana Explore).
+Grafana визуализирует метрики и логи, предоставляя единый интерфейс для наблюдения за системой.
 
-CI/CD (Continuous Integration / Continuous Deployment)
-В проекте реализован автоматический пайплайн для API-сервиса на GitHub Actions.
+## CI/CD пайплайн
+При каждом пуше в ветку main (и изменении файлов в Docker/api/**,
+helm/**, tests/**) запускается GitHub Actions workflow:
 
-Что автоматизировано: при каждом пуше в ветку main (изменения в docker/api/** или helm/**) запускается workflow, который:
+Lint & Test – проверка кода линтерами (flake8, black, isort) и
+запуск pytest.
 
-Собирает Docker-образ API.
+Build & Deploy – сборка Docker-образа с тегом коммита, пуш в Yandex
+Container Registry, обновление Helm-релиза в Kubernetes.
 
-Публикует его в Yandex Container Registry.
+Workflow не требует ручного обновления kubeconfig – он генерируется на лету с
+помощью yc.
 
-Обновляет Helm-релиз в кластере Kubernetes.
+## Дальнейшее развитие
+GitOps (ArgoCD) – автоматическая синхронизация кластера с Git.
 
-Настройка:
+GPU-ускорение – переход на ROCm-образ при стабильной поддержке RX 9070 XT.
 
-Необходимо добавить в секреты репозитория (Settings → Secrets → Actions):
+Шифрование секретов – интеграция с External Secrets Operator.
 
-YC_OAUTH_TOKEN – OAuth-токен Yandex Cloud.
+Автомасштабирование – HorizontalPodAutoscaler для API и несколько
+воркеров.
 
-REGISTRY_ID – идентификатор контейнерного реестра.
-
-KUBECONFIG – содержимое kubeconfig в формате base64.
-
-INGRESS_IP – внешний IP Ingress-контроллера.
-
-Workflow-файл: .github/workflows/deploy-api.yml.
-
-Локальный worker обновляется вручную (в рамках дипломной работы это допустимо).
-
-Примечания к учебному прототипу
-Безопасность: для простоты PostgreSQL разрешает подключения со всех IP (0.0.0.0/0), а API не требует аутентификации. В реальной системе следует ограничить firewall и добавить API-ключи.
-
-Отказоустойчивость: используется один экземпляр PostgreSQL (без реплик) и один локальный worker. Для продакшена необходимо реплицирование БД и кластеризация worker’ов.
-
-GPU: по умолчанию worker работает в CPU-режиме (флаг --cpu в ComfyUI). Для активации GPU необходимо собрать образ с поддержкой ROCm и удалить этот флаг. Это ограничение вызвано отсутствием драйверов на тестовой машине.
-
-Заключение
-Проект демонстрирует полный цикл DevOps для гибридной облачной системы: инфраструктура как код, контейнеризация, оркестрация, мониторинг и непрерывная доставка. Он готов к расширению и может служить основой для реальной системы генерации контента.
-
-По всем вопросам обращайтесь к автору дипломной работы.
+*Проект выполнен в рамках дипломной работы по специальности «DevOps-инженер»
+(TMS, 2026).*

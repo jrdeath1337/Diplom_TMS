@@ -1,5 +1,4 @@
-helm/hybrid-api/values.yaml
-# Файлы состояния (содержат секреты в открытом виде)
+# Файлы состояния Terraform (содержат секреты)
 *.tfstate
 *.tfstate.*
 .terraform/
@@ -14,6 +13,16 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Секретные ключи авторизации (например, для Yandex Cloud или AWS)
+# Секретные ключи и env-файлы
 *.json
 *.env
+
+# Генерируемый Helm values.yaml (формируется Terraform'ом)
+helm/hybrid-api/values.yaml
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Артефакты тестирования (pytest)
+.pytest_cache/
