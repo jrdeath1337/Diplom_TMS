@@ -29,7 +29,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install flake8 pytest requests httpx2 fastapi uvicorn psycopg2-binary boto3 prometheus-fastapi-instrumentator
+          pip install flake8 black isort pytest requests httpx2 fastapi uvicorn psycopg2-binary boto3 prometheus-fastapi-instrumentator
 
       - name: Lint with flake8
         # Исключаем длинные строки в api_server.py (HTML)
