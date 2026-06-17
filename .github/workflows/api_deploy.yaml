@@ -74,18 +74,19 @@ jobs:
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
-      - name: Configure yc CLI
-        run: |
-          echo "YC_TOKEN=${{ secrets.YC_OAUTH_TOKEN }}" >> $GITHUB_ENV
-          echo "YC_CLOUD_ID=${{ secrets.YC_CLOUD_ID }}" >> $GITHUB_ENV
-          echo "YC_FOLDER_ID=${{ secrets.YC_FOLDER_ID }}" >> $GITHUB_ENV
-
       - name: Setup kubeconfig
         run: |
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
           export KUBECONFIG=/tmp/kubeconfig
 
+      - name: Remove profile from kubeconfig
+        run: sed -i 's/--profile=tms-terra//g' /tmp/kubeconfig
+
       - name: Deploy to Kubernetes
+        env:
+          YC_TOKEN: ${{ secrets.YC_OAUTH_TOKEN }}
+          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
+          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
         run: |
           export KUBECONFIG=/tmp/kubeconfig
           helm upgrade --install hybrid-api ./helm/hybrid-api \
