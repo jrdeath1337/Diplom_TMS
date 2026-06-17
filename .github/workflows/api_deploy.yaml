@@ -46,6 +46,7 @@ jobs:
   build-and-deploy:
     needs: lint-and-test
     runs-on: ubuntu-latest
+    if: success()
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -81,6 +82,7 @@ jobs:
       - name: Setup kubeconfig
         run: |
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
 
       - name: Deploy to Kubernetes
         run: |
@@ -92,4 +94,3 @@ jobs:
             --set ingress.enabled=true \
             --set ingress.className=nginx \
             --set ingress.host=api.${{ secrets.INGRESS_IP }}.nip.io
-
