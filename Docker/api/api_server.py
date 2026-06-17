@@ -257,7 +257,7 @@ def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 
-@app.post("/register-worker")
+@app.post("/register-worker") # Заготовка к мониторингу worker из облака
 def register_worker(ip: str, port: int = 8000):
     """Регистрирует внешний IP воркера как Kubernetes Service worker-metrics"""
     try:
