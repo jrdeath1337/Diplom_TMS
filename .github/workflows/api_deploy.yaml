@@ -9,7 +9,7 @@ on:
       - 'helm/hybrid-api/**'
       - 'app/**'
       - 'tests/**'
-      - '.github/workflows/api_deploy.yml'
+      - '.github/workflows/api_deploy.yaml'
 
 env:
   REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
